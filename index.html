@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checklist App Offline</title>
+    <style>
+        :root { --primary: #0056b3; --success: #28a745; --warning: #ffc107; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #333; }
+        .app-container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: var(--primary); }
+        
+        .menu-bar { display: flex; gap: 10px; margin-bottom: 20px; }
+        .menu-btn { flex: 1; padding: 15px; background: #e0e0e0; color: #333; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .menu-btn.active { background: var(--primary); color: white; }
+        
+        .section { display: none; animation: fadeIn 0.3s; }
+        .section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        input[type="text"], textarea { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-family: inherit; }
+        textarea { resize: vertical; min-height: 80px; }
+        
+        .file-input-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; }
+        .file-input-wrapper input[type="file"] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; }
+        .btn-camera { display: block; width: 100%; padding: 15px; background: #6c757d; color: white; text-align: center; border-radius: 8px; font-weight: bold; box-sizing: border-box;}
+        
+        .btn-action { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; color: white; cursor: pointer; margin-top: 10px; }
+        .btn-save { background: var(--success); }
+        .btn-sync { background: var(--warning); color: #000; margin-top: 20px;}
+        
+        .task-card { border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 8px; background: #fafafa; border-left: 5px solid var(--warning); }
+        .msg { text-align: center; font-weight: bold; margin-top: 10px; height: 20px; }
+        .msg.success { color: var(--success); }
+        .msg.error { color: red; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <h2>Checklist Mobile</h2>
+    
+    <div class="menu-bar">
+        <button id="btn-create" class="menu-btn active" onclick="showSection('create')">Criar Tarefas</button>
+        <button id="btn-resolve" class="menu-btn" onclick="showSection('resolve')">Resolver Lista</button>
+    </div>
+
+    <!-- SESSÃO: CRIAR TAREFA -->
+    <div id="create" class="section active">
+        <div class="input-group">
+            <label>ID / Nome da Lista (Ex: Loja 01)</label>
+            <input type="text" id="listaId" placeholder="Digite o nome da lista">
+        </div>
+        <div class="input-group">
+            <label>O que precisa ser feito?</label>
+            <textarea id="descricao" placeholder="Descreva a atividade"></textarea>
+        </div>
+        <div class="input-group file-input-wrapper">
+            <div class="btn-camera" id="lbl-foto-criacao">📸 Tirar Foto da Pendência</div>
+            <input type="file" id="fotoCriacao" accept="image/*" capture="environment" onchange="atualizarBotaoFoto(this, 'lbl-foto-criacao')">
+        </div>
+        <button class="btn-action btn-save" onclick="salvarTarefaCriada()">Salvar Tarefa</button>
+        <div id="msgCriacao" class="msg"></div>
+    </div>
+
+    <!-- SESSÃO: RESOLVER TAREFAS -->
+    <div id="resolve" class="section">
+        <div id="listaPendentes">
+            <!-- Tarefas aparecerão aqui -->
+        </div>
+        
+        <button class="btn-action btn-sync" onclick="sincronizarComNuvem()">☁️ Sincronizar Tudo com o Google Sheets</button>
+        <div id="msgSync" class="msg"></div>
+    </div>
+</div>
+
+<script>
+    // ======================================================================
+    // ⚠️ ALTERE A URL ABAIXO PARA A URL DO SEU WEB APP GERADO NO PASSO 1
+    // ======================================================================
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzj7URHSVjT7hT2EWPvb-03T79lKpNuLXPDxQdF8Ye7P5m5JOUvRNXJerHr2GPw40bVKA/exec";
+    // ======================================================================
+
+    let db;
+    const request = indexedDB.open("ChecklistDB", 1);
+
+    request.onupgradeneeded = (e) => {
+        db = e.target.result;
+        if (!db.objectStoreNames.contains("tarefas")) {
+            db.createObjectStore("tarefas", { keyPath: "tarefaId" });
+        }
+    };
+
+    request.onsuccess = (e) => { db = e.target.result; };
+
+    function showSection(id) {
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        document.getElementById('btn-' + id).classList.add('active');
+        if(id === 'resolve') carregarTarefasPendentes();
+    }
+
+    function atualizarBotaoFoto(input, labelId) {
+        const label = document.getElementById(labelId);
+        if(input.files.length > 0) {
+            label.innerText = "✅ Foto Capturada";
+            label.style.background = "#28a745";
+        } else {
+            label.innerText = "📸 Tirar Foto";
+            label.style.background = "#6c757d";
+        }
+    }
+
+    // Função para comprimir e converter imagem (Evita travamentos de internet)
+    function compressImage(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_SIZE = 800; // Reduz para no máx 800px
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height && width > MAX_SIZE) {
+                        height *= MAX_SIZE / width;
+                        width = MAX_SIZE;
+                    } else if (height > MAX_SIZE) {
+                        width *= MAX_SIZE / height;
+                        height = MAX_SIZE;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/jpeg', 0.6)); // Qualidade 60%
+                };
+            };
+        });
+    }
+
+    async function salvarTarefaCriada() {
+        const listaId = document.getElementById('listaId').value;
+        const descricao = document.getElementById('descricao').value;
+        const fotoInput = document.getElementById('fotoCriacao');
+        const msg = document.getElementById('msgCriacao');
+
+        if (!listaId || !descricao || fotoInput.files.length === 0) {
+            msg.className = "msg error"; msg.innerText = "Preencha tudo e tire a foto!";
+            return;
+        }
+
+        msg.className = "msg"; msg.innerText = "Processando imagem...";
+        const imageB64 = await compressImage(fotoInput.files[0]);
+        
+        const tarefa = {
+            tarefaId: "TAR_" + Date.now(),
+            listaId: listaId,
+            descricao: descricao,
+            imageB64_criacao: imageB64,
+            imageB64_resolucao: null,
+            status: "pendente_sync"
+        };
+
+        const tx = db.transaction(["tarefas"], "readwrite");
+        tx.objectStore("tarefas").add(tarefa);
+        
+        tx.oncomplete = () => {
+            msg.className = "msg success"; msg.innerText = "Tarefa salva localmente!";
+            document.getElementById('descricao').value = '';
+            fotoInput.value = '';
+            atualizarBotaoFoto(fotoInput, 'lbl-foto-criacao');
+            setTimeout(() => msg.innerText = '', 3000);
+        };
+    }
+
+    function carregarTarefasPendentes() {
+        const listaDiv = document.getElementById('listaPendentes');
+        listaDiv.innerHTML = '';
+
+        const tx = db.transaction(["tarefas"], "readonly");
+        const store = tx.objectStore("tarefas");
+
+        store.openCursor().onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                const t = cursor.value;
+                if (!t.imageB64_resolucao) {
+                    listaDiv.innerHTML += `
+                        <div class="task-card">
+                            <p><strong>Lista:</strong> ${t.listaId}</p>
+                            <p><strong>O que fazer:</strong> ${t.descricao}</p>
+                            <div class="input-group file-input-wrapper">
+                                <div class="btn-camera" id="lbl-res-${t.tarefaId}">📸 Foto da Resolução</div>
+                                <input type="file" id="fotoRes_${t.tarefaId}" accept="image/*" capture="environment" onchange="atualizarBotaoFoto(this, 'lbl-res-${t.tarefaId}')">
+                            </div>
+                            <button class="btn-action btn-save" onclick="resolverTarefaLocal('${t.tarefaId}')">Confirmar Solução</button>
+                        </div>
+                    `;
+                }
+                cursor.continue();
+            }
+        };
+    }
+
+    async function resolverTarefaLocal(id) {
+        const fotoInput = document.getElementById(`fotoRes_${id}`);
+        if (fotoInput.files.length === 0) {
+            alert("Você precisa tirar a foto para comprovar!"); return;
+        }
+
+        const imageB64 = await compressImage(fotoInput.files[0]);
+        
+        const tx = db.transaction(["tarefas"], "readwrite");
+        const store = tx.objectStore("tarefas");
+        
+        store.get(id).onsuccess = (e) => {
+            const data = e.target.result;
+            data.imageB64_resolucao = imageB64;
+            data.status = "resolvida_pendente_sync";
+            store.put(data);
+            alert("Resolução salva! Clique em sincronizar para enviar.");
+            carregarTarefasPendentes();
+        };
+    }
+
+    async function sincronizarComNuvem() {
+        const msg = document.getElementById('msgSync');
+        msg.className = "msg"; msg.innerText = "Sincronizando... Aguarde.";
+        
+        const tx = db.transaction(["tarefas"], "readonly");
+        const store = tx.objectStore("tarefas");
+        const tarefas = [];
+
+        store.openCursor().onsuccess = async (e) => {
+            const cursor = e.target.result;
+            if (cursor) { tarefas.push(cursor.value); cursor.continue(); } 
+            else {
+                if(tarefas.length === 0){
+                    msg.className = "msg success"; msg.innerText = "Tudo já está sincronizado!"; return;
+                }
+
+                for (let t of tarefas) {
+                    try {
+                        // Envia criação
+                        if (t.status === "pendente_sync" || t.status === "resolvida_pendente_sync") {
+                            await fetch(GOOGLE_SCRIPT_URL, {
+                                method: "POST",
+                                body: JSON.stringify({ action: "criar_tarefa", listaId: t.listaId, tarefaId: t.tarefaId, descricao: t.descricao, imageB64: t.imageB64_criacao })
+                            });
+                        }
+                        // Envia resolução
+                        if (t.status === "resolvida_pendente_sync") {
+                            await fetch(GOOGLE_SCRIPT_URL, {
+                                method: "POST",
+                                body: JSON.stringify({ action: "resolver_tarefa", tarefaId: t.tarefaId, imageB64: t.imageB64_resolucao })
+                            });
+                        }
+                        // Se deu certo, apaga do celular
+                        db.transaction(["tarefas"], "readwrite").objectStore("tarefas").delete(t.tarefaId);
+                    } catch(err) {
+                        console.error(err);
+                        msg.className = "msg error"; msg.innerText = "Erro de conexão. Tente novamente.";
+                        return;
+                    }
+                }
+                msg.className = "msg success"; msg.innerText = "Tudo sincronizado com sucesso!";
+                carregarTarefasPendentes();
+                setTimeout(() => msg.innerText = '', 4000);
+            }
+        };
+    }
+</script>
+</body>
+</html>

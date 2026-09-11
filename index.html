@@ -6,21 +6,20 @@
     <title>Checklist App Offline</title>
     <style>
         :root { --primary: #0056b3; --success: #28a745; --warning: #ffc107; --bg: #f4f7f6; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #333; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #333; }
         .app-container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         h2 { text-align: center; color: var(--primary); }
         
         .menu-bar { display: flex; gap: 10px; margin-bottom: 20px; }
-        .menu-btn { flex: 1; padding: 15px; background: #e0e0e0; color: #333; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .menu-btn { flex: 1; padding: 15px; background: #e0e0e0; color: #333; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
         .menu-btn.active { background: var(--primary); color: white; }
         
-        .section { display: none; animation: fadeIn 0.3s; }
+        .section { display: none; }
         .section.active { display: block; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
         .input-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
-        input[type="text"], textarea { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-family: inherit; }
+        input[type="text"], select, textarea { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
         textarea { resize: vertical; min-height: 80px; }
         
         .file-input-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; }
@@ -32,7 +31,14 @@
         .btn-sync { background: var(--warning); color: #000; margin-top: 20px;}
         
         .task-card { border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 8px; background: #fafafa; border-left: 5px solid var(--warning); }
-        .msg { text-align: center; font-weight: bold; margin-top: 10px; height: 20px; }
+        .task-card.synced { border-left: 5px solid var(--success); }
+        
+        /* Fotos Lado a Lado */
+        .photo-grid { display: flex; gap: 10px; margin-top: 10px; align-items: flex-start; }
+        .photo-box { flex: 1; text-align: center; background: #fff; padding: 5px; border: 1px solid #ddd; border-radius: 5px; }
+        .photo-box img { width: 100%; max-height: 150px; object-fit: cover; border-radius: 5px; }
+        
+        .msg { text-align: center; font-weight: bold; margin-top: 10px; min-height: 20px; }
         .msg.success { color: var(--success); }
         .msg.error { color: red; }
     </style>
@@ -44,14 +50,16 @@
     
     <div class="menu-bar">
         <button id="btn-create" class="menu-btn active" onclick="showSection('create')">Criar Tarefas</button>
-        <button id="btn-resolve" class="menu-btn" onclick="showSection('resolve')">Resolver Lista</button>
+        <button id="btn-resolve" class="menu-btn" onclick="showSection('resolve')">Resolver Tarefas</button>
     </div>
 
     <!-- SESSÃO: CRIAR TAREFA -->
     <div id="create" class="section active">
         <div class="input-group">
-            <label>ID / Nome da Lista (Ex: Loja 01)</label>
-            <input type="text" id="listaId" placeholder="Digite o nome da lista">
+            <label>Escolher / Criar Lista</label>
+            <!-- O Datalist permite digitar um nome novo ou escolher um já existente -->
+            <input type="text" id="listaId" list="listasSalvas" placeholder="Ex: Loja 01 ou digite um novo">
+            <datalist id="listasSalvas"></datalist>
         </div>
         <div class="input-group">
             <label>O que precisa ser feito?</label>
@@ -61,30 +69,33 @@
             <div class="btn-camera" id="lbl-foto-criacao">📸 Tirar Foto da Pendência</div>
             <input type="file" id="fotoCriacao" accept="image/*" capture="environment" onchange="atualizarBotaoFoto(this, 'lbl-foto-criacao')">
         </div>
-        <button class="btn-action btn-save" onclick="salvarTarefaCriada()">Salvar Tarefa</button>
+        <button class="btn-action btn-save" onclick="salvarTarefaCriada()">Salvar Tarefa Localmente</button>
         <div id="msgCriacao" class="msg"></div>
     </div>
 
     <!-- SESSÃO: RESOLVER TAREFAS -->
     <div id="resolve" class="section">
-        <div id="listaPendentes">
-            <!-- Tarefas aparecerão aqui -->
+        <div class="input-group">
+            <label>Filtrar por Lista:</label>
+            <select id="filtroLista" onchange="carregarTarefasPendentes()">
+                <option value="TODAS">Mostrar Todas as Listas</option>
+            </select>
         </div>
         
-        <button class="btn-action btn-sync" onclick="sincronizarComNuvem()">☁️ Sincronizar Tudo com o Google Sheets</button>
+        <div id="listaPendentes"></div>
+        
+        <button class="btn-action btn-sync" onclick="sincronizarComNuvem()">☁️ Sincronizar Tudo com Planilha</button>
         <div id="msgSync" class="msg"></div>
     </div>
 </div>
 
 <script>
     // ======================================================================
-    // ⚠️ ALTERE A URL ABAIXO PARA A URL DO SEU WEB APP GERADO NO PASSO 1
-    // ======================================================================
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzj7URHSVjT7hT2EWPvb-03T79lKpNuLXPDxQdF8Ye7P5m5JOUvRNXJerHr2GPw40bVKA/exec";
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzhFAtqbv1fjhgbSrfiui3-6VDBDyTqtmbZIdqDJ_OMF9gCBtcIfTnhbFdaNnX2Yeiw2g/exec";
     // ======================================================================
 
     let db;
-    const request = indexedDB.open("ChecklistDB", 1);
+    const request = indexedDB.open("ChecklistApp", 2);
 
     request.onupgradeneeded = (e) => {
         db = e.target.result;
@@ -92,15 +103,55 @@
             db.createObjectStore("tarefas", { keyPath: "tarefaId" });
         }
     };
-
-    request.onsuccess = (e) => { db = e.target.result; };
+    request.onsuccess = (e) => { db = e.target.result; atualizarListasDropdowns(); };
 
     function showSection(id) {
         document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
         document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(id).classList.add('active');
         document.getElementById('btn-' + id).classList.add('active');
+        atualizarListasDropdowns();
         if(id === 'resolve') carregarTarefasPendentes();
+    }
+
+    // Lê todas as tarefas para montar a lista de nomes únicos (para o Dropdown)
+    function atualizarListasDropdowns() {
+        const tx = db.transaction(["tarefas"], "readonly");
+        const store = tx.objectStore("tarefas");
+        const listas = new Set();
+        
+        store.openCursor().onsuccess = (e) => {
+            const cursor = e.target.result;
+            if(cursor) { listas.add(cursor.value.listaId); cursor.continue(); } 
+            else {
+                const datalist = document.getElementById('listasSalvas');
+                const select = document.getElementById('filtroLista');
+                const valorSelectAtual = select.value;
+
+                datalist.innerHTML = '';
+                select.innerHTML = '<option value="TODAS">Mostrar Todas as Listas</option>';
+                
+                listas.forEach(lista => {
+                    datalist.innerHTML += `<option value="${lista}">`;
+                    select.innerHTML += `<option value="${lista}">${lista}</option>`;
+                });
+                
+                if (listas.has(valorSelectAtual)) select.value = valorSelectAtual;
+            }
+        };
+    }
+
+    // Pré-visualização da foto
+    function previewImagem(input, imgId, labelId) {
+        const label = document.getElementById(labelId);
+        const img = document.getElementById(imgId);
+        if(input.files.length > 0) {
+            label.innerText = "✅ Capturada";
+            label.style.background = "#28a745";
+            const reader = new FileReader();
+            reader.onload = (e) => { img.src = e.target.result; img.style.display = 'block'; };
+            reader.readAsDataURL(input.files[0]);
+        }
     }
 
     function atualizarBotaoFoto(input, labelId) {
@@ -108,13 +159,9 @@
         if(input.files.length > 0) {
             label.innerText = "✅ Foto Capturada";
             label.style.background = "#28a745";
-        } else {
-            label.innerText = "📸 Tirar Foto";
-            label.style.background = "#6c757d";
         }
     }
 
-    // Função para comprimir e converter imagem (Evita travamentos de internet)
     function compressImage(file) {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -124,40 +171,29 @@
                 img.src = event.target.result;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    const MAX_SIZE = 800; // Reduz para no máx 800px
-                    let width = img.width;
-                    let height = img.height;
-
-                    if (width > height && width > MAX_SIZE) {
-                        height *= MAX_SIZE / width;
-                        width = MAX_SIZE;
-                    } else if (height > MAX_SIZE) {
-                        width *= MAX_SIZE / height;
-                        height = MAX_SIZE;
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.6)); // Qualidade 60%
+                    let w = img.width, h = img.height;
+                    const MAX = 800;
+                    if (w > h && w > MAX) { h *= MAX / w; w = MAX; } 
+                    else if (h > MAX) { w *= MAX / h; h = MAX; }
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', 0.6)); 
                 };
             };
         });
     }
 
     async function salvarTarefaCriada() {
-        const listaId = document.getElementById('listaId').value;
+        const listaId = document.getElementById('listaId').value.trim();
         const descricao = document.getElementById('descricao').value;
         const fotoInput = document.getElementById('fotoCriacao');
         const msg = document.getElementById('msgCriacao');
 
         if (!listaId || !descricao || fotoInput.files.length === 0) {
-            msg.className = "msg error"; msg.innerText = "Preencha tudo e tire a foto!";
-            return;
+            msg.className = "msg error"; msg.innerText = "Preencha a lista, descrição e tire a foto!"; return;
         }
 
-        msg.className = "msg"; msg.innerText = "Processando imagem...";
+        msg.className = "msg"; msg.innerText = "Processando...";
         const imageB64 = await compressImage(fotoInput.files[0]);
         
         const tarefa = {
@@ -166,42 +202,68 @@
             descricao: descricao,
             imageB64_criacao: imageB64,
             imageB64_resolucao: null,
-            status: "pendente_sync"
+            status: "pendente_sync" // Status: pendente_sync, criacao_sincronizada, resolvida_pendente_sync, totalmente_sincronizada
         };
 
         const tx = db.transaction(["tarefas"], "readwrite");
         tx.objectStore("tarefas").add(tarefa);
-        
         tx.oncomplete = () => {
-            msg.className = "msg success"; msg.innerText = "Tarefa salva localmente!";
+            msg.className = "msg success"; msg.innerText = "Salva! Ela já aparece em 'Resolver Tarefas'.";
             document.getElementById('descricao').value = '';
             fotoInput.value = '';
-            atualizarBotaoFoto(fotoInput, 'lbl-foto-criacao');
-            setTimeout(() => msg.innerText = '', 3000);
+            document.getElementById('lbl-foto-criacao').innerText = "📸 Tirar Foto da Pendência";
+            document.getElementById('lbl-foto-criacao').style.background = "#6c757d";
+            atualizarListasDropdowns();
+            setTimeout(() => msg.innerText = '', 4000);
         };
     }
 
     function carregarTarefasPendentes() {
         const listaDiv = document.getElementById('listaPendentes');
+        const filtro = document.getElementById('filtroLista').value;
         listaDiv.innerHTML = '';
 
         const tx = db.transaction(["tarefas"], "readonly");
-        const store = tx.objectStore("tarefas");
-
-        store.openCursor().onsuccess = (e) => {
+        tx.objectStore("tarefas").openCursor().onsuccess = (e) => {
             const cursor = e.target.result;
             if (cursor) {
                 const t = cursor.value;
-                if (!t.imageB64_resolucao) {
+                if (filtro === "TODAS" || t.listaId === filtro) {
+                    
+                    const isTotalmenteSync = t.status === "totalmente_sincronizada";
+                    const isCriacaoSync = t.status === "criacao_sincronizada";
+                    
+                    // Lógica para saber o que exibir
+                    let statusText = "Aguardando Sincronização da Criação";
+                    if (isCriacaoSync) statusText = "Criação Sincronizada (Aguardando Resolução)";
+                    if (t.status === "resolvida_pendente_sync") statusText = "Resolução aguardando Sincronização";
+                    if (isTotalmenteSync) statusText = "✅ Totalmente Sincronizada e Resolvida";
+
                     listaDiv.innerHTML += `
-                        <div class="task-card">
+                        <div class="task-card ${isTotalmenteSync ? 'synced' : ''}">
                             <p><strong>Lista:</strong> ${t.listaId}</p>
-                            <p><strong>O que fazer:</strong> ${t.descricao}</p>
-                            <div class="input-group file-input-wrapper">
-                                <div class="btn-camera" id="lbl-res-${t.tarefaId}">📸 Foto da Resolução</div>
-                                <input type="file" id="fotoRes_${t.tarefaId}" accept="image/*" capture="environment" onchange="atualizarBotaoFoto(this, 'lbl-res-${t.tarefaId}')">
+                            <p><strong>Tarefa:</strong> ${t.descricao}</p>
+                            <p style="font-size: 12px; color: gray;">Status: ${statusText}</p>
+                            
+                            <div class="photo-grid">
+                                <div class="photo-box">
+                                    <label>Pedido:</label>
+                                    <img src="${t.imageB64_criacao}">
+                                </div>
+                                <div class="photo-box">
+                                    <label>Resolução:</label>
+                                    <img id="preview_${t.tarefaId}" src="${t.imageB64_resolucao || 'https://via.placeholder.com/150?text=Sem+Foto'}" style="${!t.imageB64_resolucao ? 'opacity: 0.3' : ''}">
+                                    
+                                    ${!t.imageB64_resolucao ? `
+                                    <div class="file-input-wrapper" style="margin-top:5px;">
+                                        <div class="btn-camera" id="lbl-res-${t.tarefaId}" style="padding:10px; font-size:12px;">📸 Tirar Foto</div>
+                                        <input type="file" id="fotoRes_${t.tarefaId}" accept="image/*" capture="environment" onchange="previewImagem(this, 'preview_${t.tarefaId}', 'lbl-res-${t.tarefaId}')">
+                                    </div>
+                                    ` : ''}
+                                </div>
                             </div>
-                            <button class="btn-action btn-save" onclick="resolverTarefaLocal('${t.tarefaId}')">Confirmar Solução</button>
+                            
+                            ${!t.imageB64_resolucao ? `<button class="btn-action btn-save" onclick="resolverTarefaLocal('${t.tarefaId}')">Salvar Resolução Local</button>` : ''}
                         </div>
                     `;
                 }
@@ -212,12 +274,9 @@
 
     async function resolverTarefaLocal(id) {
         const fotoInput = document.getElementById(`fotoRes_${id}`);
-        if (fotoInput.files.length === 0) {
-            alert("Você precisa tirar a foto para comprovar!"); return;
-        }
+        if (fotoInput.files.length === 0) { alert("Tire a foto da resolução!"); return; }
 
         const imageB64 = await compressImage(fotoInput.files[0]);
-        
         const tx = db.transaction(["tarefas"], "readwrite");
         const store = tx.objectStore("tarefas");
         
@@ -226,56 +285,65 @@
             data.imageB64_resolucao = imageB64;
             data.status = "resolvida_pendente_sync";
             store.put(data);
-            alert("Resolução salva! Clique em sincronizar para enviar.");
+            alert("Resolução salva! Clique em Sincronizar para enviar ao Google Sheets.");
             carregarTarefasPendentes();
         };
     }
 
     async function sincronizarComNuvem() {
         const msg = document.getElementById('msgSync');
-        msg.className = "msg"; msg.innerText = "Sincronizando... Aguarde.";
+        msg.className = "msg"; msg.innerText = "Sincronizando... Não feche o app.";
         
         const tx = db.transaction(["tarefas"], "readonly");
-        const store = tx.objectStore("tarefas");
         const tarefas = [];
 
-        store.openCursor().onsuccess = async (e) => {
+        tx.objectStore("tarefas").openCursor().onsuccess = async (e) => {
             const cursor = e.target.result;
             if (cursor) { tarefas.push(cursor.value); cursor.continue(); } 
             else {
-                if(tarefas.length === 0){
-                    msg.className = "msg success"; msg.innerText = "Tudo já está sincronizado!"; return;
-                }
-
                 for (let t of tarefas) {
                     try {
-                        // Envia criação
+                        let atualizou = false;
+
+                        // 1. Envia a CRIAÇÃO se ainda não foi
                         if (t.status === "pendente_sync" || t.status === "resolvida_pendente_sync") {
-                            await fetch(GOOGLE_SCRIPT_URL, {
-                                method: "POST",
-                                body: JSON.stringify({ action: "criar_tarefa", listaId: t.listaId, tarefaId: t.tarefaId, descricao: t.descricao, imageB64: t.imageB64_criacao })
-                            });
+                            await enviarParaGoogle({ action: "criar_tarefa", listaId: t.listaId, tarefaId: t.tarefaId, descricao: t.descricao, imageB64: t.imageB64_criacao });
+                            if(t.status === "pendente_sync") t.status = "criacao_sincronizada";
+                            atualizou = true;
                         }
-                        // Envia resolução
+                        
+                        // 2. Envia a RESOLUÇÃO se ainda não foi
                         if (t.status === "resolvida_pendente_sync") {
-                            await fetch(GOOGLE_SCRIPT_URL, {
-                                method: "POST",
-                                body: JSON.stringify({ action: "resolver_tarefa", tarefaId: t.tarefaId, imageB64: t.imageB64_resolucao })
-                            });
+                            await enviarParaGoogle({ action: "resolver_tarefa", tarefaId: t.tarefaId, imageB64: t.imageB64_resolucao });
+                            t.status = "totalmente_sincronizada";
+                            atualizou = true;
                         }
-                        // Se deu certo, apaga do celular
-                        db.transaction(["tarefas"], "readwrite").objectStore("tarefas").delete(t.tarefaId);
+
+                        // Atualiza o banco mantendo a tarefa salva (sem excluir)
+                        if(atualizou) {
+                            db.transaction(["tarefas"], "readwrite").objectStore("tarefas").put(t);
+                        }
                     } catch(err) {
                         console.error(err);
-                        msg.className = "msg error"; msg.innerText = "Erro de conexão. Tente novamente.";
+                        msg.className = "msg error"; msg.innerText = "Erro na rede. Tente de novo.";
                         return;
                     }
                 }
-                msg.className = "msg success"; msg.innerText = "Tudo sincronizado com sucesso!";
+                msg.className = "msg success"; msg.innerText = "Sincronização 100% concluída!";
                 carregarTarefasPendentes();
                 setTimeout(() => msg.innerText = '', 4000);
             }
         };
+    }
+
+    // Função separada que usa text/plain e no-cors para furar o bloqueio do Google
+    async function enviarParaGoogle(payload) {
+        return fetch(GOOGLE_SCRIPT_URL, {
+            method: "POST",
+            mode: 'no-cors', // Fundamental para ignorar os erros de segurança CORS do Google
+            headers: { "Content-Type": "text/plain" }, // Engana a verificação de segurança
+            body: JSON.stringify(payload)
+        });
     }
 </script>
 </body>

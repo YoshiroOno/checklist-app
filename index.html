@@ -1,68 +1,68 @@
 <!DOCTYPE html>
-<max-height língua="pt-BR">
-<caboça        .caixa de fotos imagem { largura: 100%; altura máxima: 150px; object-fit: cover; border-radius: 5px; }
-    <meta conjunto de caracteres="UTF-8">
-    <meta nome="janela de visualização" conteúdo="largura=largura do dispositivo, escala inicial=1,0">
-    <título>Lista de verificação do aplicativo offline</título>
-    <estilo>
-        :raiz { --primário: #0056b3; --sucesso: #28a745; --aviso: #ffc107; --bg: #f4f7f6; }
-        corpo { família de fontes: 'UI de sego', sem serifa; cor de fundo: var(--bg); margem: 0; preenchimento: 20px; cor: #333; }
-        .contador de aplicativo { largura máxima: 600px; março: 0 auto; fundo: branco; pré-enchimento: 20px; raio da borda: 12px; sombra da caixa: 0 4px 10px rgba(0,0,0,0,1); }
-        h2 { alinhamento de texto: centro; cor: var(--primário); }
-</
-        .barra de menu { exibir: flexível; lacuna: 10px; margem inferior: 20px; }
-        .menu-btn { flexível: 1; enchimento: 15px; fundo: #e0e0e0; cor: #333; borda: nenhuma; raio da borda: 8px; tamanho da fonte: 16px; peso da fonte: negrito; cursor: ponteiro; }
-        .menu-btn.ativo { fundo: var(--primário); cor: branco; }
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checklist App Offline</title>
+    <style>
+        :root { --primary: #0056b3; --success: #28a745; --warning: #ffc107; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #333; }
+        .app-container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: var(--primary); }
         
-        .sessão { exibir: nenhum; }
-        .seção.ativo { exibir: bloquear; }
+        .menu-bar { display: flex; gap: 10px; margin-bottom: 20px; }
+        .menu-btn { flex: 1; padding: 15px; background: #e0e0e0; color: #333; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .menu-btn.active { background: var(--primary); color: white; }
+        
+        .section { display: none; }
+        .section.active { display: block; }
 
-        .grupo de entrada { margem inferior: 15px; }
-        rótulo { exibir: bloquear; margem inferior: 5px; peso da fonte: negrito; tamanho da fonte: 14px; }
-        entrada[tipo="texto"], selecionar, área de texto { largura: 100%; pré-enchimento: 12px; borda: 1px sólido #ccc; raio da borda: 8px; tamanho da caixa: caixa de borda; }
-        área de texto { redimensional: vertical; alta mídia: 80px; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        input[type="text"], select, textarea { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
+        textarea { resize: vertical; min-height: 80px; }
         
-        .invólucro de entrada de arquivo { posição: relativo; estudo: oco; exigência: bloco em linha; largura: 100%; }
-        .invólucro de entrada de arquivo entrada[tipo="arquivo"] { tamanho da fonte: 100px; posição: absoluta; esmeralda: 0; topo: 0; opacidade: 0; cursor: ponteiro; }
-        .câmera btn { exibir: bloquear; largura: 100%; pré-enchimento: 15px; fundo: #6c757d; cor: branco; alinhamento de texto: centro; raio de borda: 8px; peso da fonte: negrito; tamanho da caixa: caixa de borda;}
+        .file-input-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; }
+        .file-input-wrapper input[type="file"] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; }
+        .btn-camera { display: block; width: 100%; padding: 15px; background: #6c757d; color: white; text-align: center; border-radius: 8px; font-weight: bold; box-sizing: border-box;}
         
-        .ação btn { largura: 100%; enchimento: 15px; borda: nenhuma; raio da borda: 8px; tamanho da fonte: 16px; peso da fonte: negrito; cor: branco; cursor: ponteiro; marca superior: 10px; }
-        .btn-salvar { fundo: var(--sucesso); }
-        .sincronização btn { fundo: var(--aviso); cor: #000; marca superior: 20px;}
+        .btn-action { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; color: white; cursor: pointer; margin-top: 10px; }
+        .btn-save { background: var(--success); }
+        .btn-sync { background: var(--warning); color: #000; margin-top: 20px;}
         
-        .cartão de tarifa { fronteira: 1px sólido #ddd; pré-enchimento: 15px; margem inferior: 15px; raio da borda: 8px; fundo: #fafafa; borda esquerda: 5px sólido var(--aviso); }
-        .cartão de tarefa.sincronizado { fronteira esquerda: 5px solid var(--success); }
+        .task-card { border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 8px; background: #fafafa; border-left: 5px solid var(--warning); }
+        .task-card.synced { border-left: 5px solid var(--success); }
         
         /* Fotos Lado a Lado */
-        .grau de fotos { exibir: flexível; lacuna: 10px; margem superior: 10px; alinhar itens: flex-start; }
-        .caixa de fotos { flexível: 1; alinhamento de texto: centro; fundo: #fff; pré-enchimento: 5px; borda: 1px sólido #ddd; raio da borda: 5px; }
-        .caixa de fotos imagem { largura: 100%; alta máxima: 150px; ajuste do objeto: cobertura; raio da borda: 5px; }
+        .photo-grid { display: flex; gap: 10px; margin-top: 10px; align-items: flex-start; }
+        .photo-box { flex: 1; text-align: center; background: #fff; padding: 5px; border: 1px solid #ddd; border-radius: 5px; }
+        .photo-box img { width: 100%; max-height: 150px; object-fit: cover; border-radius: 5px; }
         
-        .msg { alinhamento de texto: centro; peso da fonte: negrito; marca superior: 10px; alta média: 20px; }
-        .msg.success { cor: var(--sucesso); }
-        .msg.error { cor: vermelho; }
-    </estilo>
-</caboça>
-<corpo>
+        .msg { text-align: center; font-weight: bold; margin-top: 10px; min-height: 20px; }
+        .msg.success { color: var(--success); }
+        .msg.error { color: red; }
+    </style>
+</head>
+<body>
 
-<dividir classe="contêiner de aplicativo">
-    <h2>Lista de verificação móvel</h2>
+<div class="app-container">
+    <h2>Checklist Mobile</h2>
     
-    <dividir classe="barra de menu">
-        <botão id="btn-criar" classe="menu-btn ativo" onclick="showSection('create')">Criar Tarefas</button>
-        <botão id="btn-resolve" classe="menu-btn" onclick="showSection('resolve')">Resolver Tarefas</button>
-    </dividir>
+    <div class="menu-bar">
+        <button id="btn-create" class="menu-btn active" onclick="showSection('create')">Criar Tarefas</button>
+        <button id="btn-resolve" class="menu-btn" onclick="showSection('resolve')">Resolver Tarefas</button>
+    </div>
 
     <!-- SESSÃO: CRIAR TAREFA -->
-    <dividir id="criar" classe="seção ativa">
-        <dividir classe="grupo de entrada">
-            <rótulo>Escolher / Criar Lista</rótulo>
-            <!-- O Datalista permite digitar um nome novo ou escolher um já existente -->
-            <entrada tipo="texto" id="listaId" list="listasSalvas" placeholder="Ex: Loja 01 ou digite um novo">
-            <pxHTMLid="listasSalvas"></datalista>
-        </dividir>
-        <dividir classe="grupo de entrada">
-            <rótulo>O que precisa ser feito?</label>
+    <div id="create" class="section active">
+        <div class="input-group">
+            <label>Escolher / Criar Lista</label>
+            <!-- O Datalist permite digitar um nome novo ou escolher um já existente -->
+            <input type="text" id="listaId" list="listasSalvas" placeholder="Ex: Loja 01 ou digite um novo">
+            <datalist id="listasSalvas"></datalist>
+        </div>
+        <div class="input-group">
+            <label>O que precisa ser feito?</label>
             <textarea id="descricao" placeholder="Descreva a atividade"></textarea>
         </div>
         <div class="input-group file-input-wrapper">
@@ -91,7 +91,7 @@
 
 <script>
     // ======================================================================
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbybygRUaFZEw9MtFewAtj_Vo0sKLUI3ju_08aEx8oTGq135us7lfUe1I9D9P0HmH0twxg/exec";
+    const GOOGLE_SCRIPT_URL = "COLE_A_URL_DO_SEU_WEB_APP_AQUI";
     // ======================================================================
 
     let db;

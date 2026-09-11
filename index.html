@@ -282,6 +282,48 @@
   .done-screen .ico{ color: var(--success); margin-bottom: 14px; }
   .done-screen .ico svg{ width:44px; height:44px; }
 
+  /* ---- detalhe da lista (ver imagens / adicionar tarefa) ---- */
+  .detail-meta-row{ display:flex; align-items:center; gap:10px; margin-bottom: 18px; flex-wrap:wrap; }
+  .status-badge{
+    display:inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    flex:none;
+  }
+  .status-badge.pendente{ color: var(--accent); border-color: var(--accent); }
+  .status-badge.resolvida{ color: var(--success); border-color: var(--success); }
+  .status-badge.aberta{ color: var(--accent); border-color: var(--accent); }
+  .status-badge.concluida{ color: var(--success); border-color: var(--success); }
+  .detail-actions{ display:flex; flex-direction:column; gap:10px; margin-bottom: 20px; }
+
+  .detail-task{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .dt-images{ display:flex; }
+  .dt-img-col{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  .dt-img-col img{ width:100%; height:150px; object-fit:cover; display:block; background: var(--surface-2); }
+  .dt-img-label{
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--text-dim);
+    padding: 5px 8px;
+    background: var(--surface-2);
+  }
+  .dt-body{ padding: 12px; }
+  .dt-text{ font-size: 14px; line-height: 1.5; margin-bottom: 8px; }
+  .dt-meta{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .dt-meta .when{ font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); }
+
+  .composer.inline{ margin-top: -6px; }
+
   /* ---- configurações ---- */
   .settings-box{
     background: var(--surface);
@@ -334,7 +376,7 @@
   <!-- ===================== TELA: MENU ===================== -->
   <main id="view-menu">
     <h1>Bom trabalho.</h1>
-    <p class="lead">Crie uma lista de tarefas com fotos, ou resolva pendências registrando a foto de confirmação.</p>
+    <p class="lead">Crie uma lista de tarefas com fotos, ou resolva pendências registrando a foto de confirmação. Tudo é compartilhado — visível para todos, em qualquer dispositivo.</p>
 
     <div class="menu-actions">
       <button class="menu-tile create" id="tileCreate">
@@ -349,7 +391,7 @@
       </button>
     </div>
 
-    <div class="section-label">SUAS LISTAS</div>
+    <div class="section-label">LISTAS GERAIS</div>
     <div id="listsContainer"><div class="empty">Carregando…</div></div>
   </main>
 
@@ -405,6 +447,42 @@
     <div id="resolveTaskBody"></div>
   </main>
 
+  <!-- ===================== TELA: DETALHE DA LISTA (ver imagens / adicionar tarefa) ===================== -->
+  <main id="view-list-detail" hidden>
+    <div class="back-row">
+      <button class="icon-btn" data-nav="menu" aria-label="Voltar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h2 id="detailListName">Lista</h2>
+    </div>
+    <div class="detail-meta-row">
+      <span class="status-badge" id="detailListStatus"></span>
+      <span class="note" id="detailListMeta" style="margin:0;"></span>
+    </div>
+
+    <div class="detail-actions">
+      <button class="btn btn-success" id="btnDetailResolve" hidden>Resolver pendências</button>
+      <button class="btn btn-ghost" id="btnDetailAddTask">+ Adicionar tarefa</button>
+    </div>
+
+    <div class="composer inline" id="detailAddComposer" hidden>
+      <label class="shot-trigger" id="detailAddShotTrigger">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <span>Tirar ou anexar uma foto</span>
+        <input class="shot-input" type="file" accept="image/*" capture="environment" id="detailAddShotInput">
+      </label>
+      <label class="field-label" for="detailAddText">Descrição</label>
+      <textarea id="detailAddText" placeholder="O que precisa ser resolvido?"></textarea>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnDetailAddCancel">Cancelar</button>
+        <button class="btn btn-primary" id="btnDetailAddSave">Adicionar</button>
+      </div>
+    </div>
+
+    <div class="section-label">TAREFAS</div>
+    <div id="detailTasksContainer"></div>
+  </main>
+
   <!-- ===================== TELA: CONFIGURAÇÕES ===================== -->
   <main id="view-settings" hidden>
     <div class="back-row">
@@ -445,7 +523,7 @@
      normalmente offline e você pode configurá-la depois pela tela
      de Configurações dentro do próprio app.
      ============================================================ */
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzNQGdSpFjBUjsRaB1Vg_TJgChf_2SMq4WXULxkYTRDw6SdWZtWSeYHtnpWvRNSwjeU/exec";
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwC_p-bcwP434lc5P9O7zoTsXaBHxsZ40xacdbUyeHXjQFnhV4CUUx1hSgByY7dgzLQ/exec";
 
   /* ============================================================
      BANCO DE DADOS LOCAL (IndexedDB)
@@ -607,6 +685,77 @@
     for (const l of lists.filter(l => !l.sincronizado)) { allOk = (await syncList(l)) && allOk; }
     for (const t of tasks.filter(t => !t.sincronizado)) { allOk = (await syncTask(t)) && allOk; }
     setSyncStatus(allOk ? "sincronizado" : "pendente");
+    return allOk;
+  }
+
+  // Busca o estado completo (todas as listas/tarefas) direto da planilha,
+  // para que qualquer dispositivo enxergue o que foi feito nos outros.
+  async function pullAll(){
+    const url = await getWebAppUrl();
+    if (!url) return false;
+    try{
+      const sep = url.indexOf("?") >= 0 ? "&" : "?";
+      const res = await fetch(url + sep + "action=listarTudo");
+      const data = await res.json();
+      if (!data || !data.success) return false;
+      await mergeRemoteData(data.listas || [], data.tarefas || []);
+      return true;
+    }catch(err){
+      return false;
+    }
+  }
+
+  // Mescla os dados vindos da planilha com o banco local.
+  // Nunca sobrescreve uma lista/tarefa criada/editada localmente que ainda
+  // não foi enviada (sincronizado:false) — ela será enviada e só então
+  // substituída pela versão "oficial" na próxima sincronização.
+  async function mergeRemoteData(listasRemotas, tarefasRemotas){
+    const [listasLocais, tarefasLocais] = await Promise.all([dbGetAll("lists"), dbGetAll("tasks")]);
+    const mapaListas = new Map(listasLocais.map(l => [l.id, l]));
+    const mapaTarefas = new Map(tarefasLocais.map(t => [t.id, t]));
+
+    for (const rl of listasRemotas){
+      const local = mapaListas.get(rl.id);
+      if (!local || local.sincronizado){
+        await dbPut("lists", {
+          id: rl.id,
+          nome: rl.nome || (local && local.nome) || "",
+          criadoEm: rl.criadoEm || (local && local.criadoEm) || new Date().toISOString(),
+          status: rl.status || (local && local.status) || "aberta",
+          sincronizado: true
+        });
+      }
+    }
+
+    for (const rt of tarefasRemotas){
+      const local = mapaTarefas.get(rt.id);
+      if (!local || local.sincronizado){
+        await dbPut("tasks", {
+          id: rt.id,
+          listId: rt.listId,
+          texto: rt.texto || (local && local.texto) || "",
+          status: rt.status || (local && local.status) || "pendente",
+          criadoEm: rt.criadoEm || (local && local.criadoEm) || new Date().toISOString(),
+          resolvidoEm: rt.resolvidoEm || (local && local.resolvidoEm) || null,
+          imagemCriacao: rt.fotoCriacaoUrl || (local && local.imagemCriacao) || null,
+          imagemResolucao: rt.fotoResolucaoUrl || (local && local.imagemResolucao) || null,
+          sincronizado: true
+        });
+      }
+    }
+  }
+
+  // Ciclo completo: envia o que está pendente e depois busca o estado global.
+  // É isso que roda a cada 1 minuto e no botão "Sincronizar agora".
+  async function syncCycle(){
+    const url = await getWebAppUrl();
+    if (!url){ setSyncStatus("local"); return; }
+    if (!navigator.onLine){ setSyncStatus("offline"); return; }
+    setSyncStatus("sincronizando");
+    await syncAll();
+    const pullOk = await pullAll();
+    setSyncStatus(pullOk ? "sincronizado" : "pendente");
+    refreshCurrentView();
   }
 
   function setSyncStatus(status){
@@ -623,14 +772,24 @@
   /* ============================================================
      NAVEGAÇÃO
      ============================================================ */
-  const views = ["menu","create","resolve-select","resolve-task","settings"];
+  const views = ["menu","create","resolve-select","resolve-task","list-detail","settings"];
+  let currentView = "menu";
   function showView(name){
+    currentView = name;
     views.forEach(v => {
       document.getElementById("view-" + v).hidden = (v !== name);
     });
     if (name === "menu") renderMenu();
     if (name === "resolve-select") renderResolveSelect();
+    if (name === "list-detail") renderListDetail();
     if (name === "settings") renderSettings();
+  }
+  // Reaplica os dados na tela atual depois de uma sincronização automática,
+  // sem tirar o usuário do que ele está fazendo.
+  function refreshCurrentView(){
+    if (currentView === "menu") renderMenu();
+    else if (currentView === "resolve-select") renderResolveSelect();
+    else if (currentView === "list-detail") renderListDetail();
   }
   document.querySelectorAll("[data-nav]").forEach(btn => {
     btn.addEventListener("click", () => showView(btn.getAttribute("data-nav")));
@@ -682,18 +841,8 @@
     }));
     container.innerHTML = rows.join("");
     container.querySelectorAll(".list-row").forEach(row => {
-      row.addEventListener("click", () => openList(row.getAttribute("data-list-id")));
+      row.addEventListener("click", () => openListDetail(row.getAttribute("data-list-id")));
     });
-  }
-
-  async function openList(listId){
-    const list = await dbGet("lists", listId);
-    if (!list) return;
-    if (list.status === "concluida"){
-      toast("Essa lista já foi concluída.");
-      return;
-    }
-    startResolve(listId);
   }
 
   function escapeHtml(str){
@@ -938,6 +1087,132 @@
   }
 
   /* ============================================================
+     TELA: DETALHE DA LISTA
+     Ver todas as imagens (mesmo de listas já concluídas) e
+     adicionar uma nova tarefa a uma lista já existente.
+     ============================================================ */
+  let currentDetailListId = null;
+  let detailAddShot = null;
+
+  function openListDetail(listId){
+    currentDetailListId = listId;
+    showView("list-detail");
+  }
+
+  async function renderListDetail(){
+    const listId = currentDetailListId;
+    const list = await dbGet("lists", listId);
+    if (!list){ showView("menu"); return; }
+    const tasks = await dbGetAllByIndex("tasks", "listId", listId);
+    tasks.sort((a,b) => (a.criadoEm || "").localeCompare(b.criadoEm || ""));
+    const pendentes = tasks.filter(t => t.status === "pendente").length;
+    const resolvidas = tasks.length - pendentes;
+
+    document.getElementById("detailListName").textContent = list.nome;
+    document.getElementById("detailListMeta").textContent = `${fmtData(list.criadoEm)} · ${resolvidas}/${tasks.length} resolvidas`;
+    const badge = document.getElementById("detailListStatus");
+    badge.textContent = list.status === "concluida" ? "concluída" : "aberta";
+    badge.className = "status-badge " + list.status;
+
+    const resolveBtn = document.getElementById("btnDetailResolve");
+    resolveBtn.hidden = pendentes === 0;
+    resolveBtn.textContent = `Resolver pendências (${pendentes})`;
+
+    const tasksContainer = document.getElementById("detailTasksContainer");
+    if (!tasks.length){
+      tasksContainer.innerHTML = '<div class="empty">Nenhuma tarefa nesta lista ainda.</div>';
+    } else {
+      tasksContainer.innerHTML = tasks.map(t => {
+        const resolvida = t.status === "resolvida";
+        const images = (resolvida && t.imagemResolucao)
+          ? `<div class="dt-images">
+               <div class="dt-img-col"><span class="dt-img-label">Registro</span><img src="${t.imagemCriacao || ""}" alt="Foto de registro"></div>
+               <div class="dt-img-col"><span class="dt-img-label">Confirmação</span><img src="${t.imagemResolucao}" alt="Foto de confirmação"></div>
+             </div>`
+          : `<div class="dt-images"><div class="dt-img-col"><img src="${t.imagemCriacao || ""}" alt="Foto de registro"></div></div>`;
+        const quando = resolvida ? ("resolvida em " + fmtData(t.resolvidoEm)) : ("criada em " + fmtData(t.criadoEm));
+        return `
+          <div class="detail-task">
+            ${images}
+            <div class="dt-body">
+              <div class="dt-text">${escapeHtml(t.texto)}</div>
+              <div class="dt-meta">
+                <span class="status-badge ${t.status}">${resolvida ? "resolvida" : "pendente"}</span>
+                <span class="when">${quando}</span>
+              </div>
+            </div>
+          </div>`;
+      }).join("");
+    }
+
+    document.getElementById("detailAddComposer").hidden = true;
+    document.getElementById("detailAddText").value = "";
+    resetDetailAddShot();
+  }
+
+  document.getElementById("btnDetailResolve").addEventListener("click", () => {
+    if (currentDetailListId) startResolve(currentDetailListId);
+  });
+  document.getElementById("btnDetailAddTask").addEventListener("click", () => {
+    document.getElementById("detailAddComposer").hidden = false;
+  });
+  document.getElementById("btnDetailAddCancel").addEventListener("click", () => {
+    document.getElementById("detailAddComposer").hidden = true;
+    document.getElementById("detailAddText").value = "";
+    detailAddShot = null;
+    resetDetailAddShot();
+  });
+
+  function resetDetailAddShot(){
+    detailAddShot = null;
+    const trigger = document.getElementById("detailAddShotTrigger");
+    trigger.classList.remove("has-image");
+    trigger.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <span>Tirar ou anexar uma foto</span>
+      <input class="shot-input" type="file" accept="image/*" capture="environment" id="detailAddShotInput">`;
+    document.getElementById("detailAddShotInput").addEventListener("change", onDetailAddShotChosen);
+  }
+
+  async function onDetailAddShotChosen(e){
+    const file = e.target.files[0];
+    if (!file) return;
+    detailAddShot = await fileToCompressedDataURL(file);
+    const trigger = document.getElementById("detailAddShotTrigger");
+    trigger.classList.add("has-image");
+    trigger.innerHTML = `<img src="${detailAddShot}" alt="Prévia da foto"><input class="shot-input" type="file" accept="image/*" capture="environment" id="detailAddShotInput">`;
+    document.getElementById("detailAddShotInput").addEventListener("change", onDetailAddShotChosen);
+  }
+
+  document.getElementById("btnDetailAddSave").addEventListener("click", async () => {
+    const texto = document.getElementById("detailAddText").value.trim();
+    if (!detailAddShot){ toast("Adicione uma foto para a tarefa."); return; }
+    if (!texto){ toast("Descreva do que se trata."); return; }
+    const btn = document.getElementById("btnDetailAddSave");
+    btn.disabled = true;
+
+    const now = new Date().toISOString();
+    const task = {
+      id: uuid(), listId: currentDetailListId, texto, imagemCriacao: detailAddShot,
+      imagemResolucao: null, status: "pendente", criadoEm: now, resolvidoEm: null, sincronizado: false
+    };
+    await dbPut("tasks", task);
+    syncTask(task);
+
+    const list = await dbGet("lists", currentDetailListId);
+    if (list && list.status === "concluida"){
+      list.status = "aberta";
+      list.sincronizado = false;
+      await dbPut("lists", list);
+      syncList(list);
+    }
+
+    toast("Tarefa adicionada.");
+    btn.disabled = false;
+    renderListDetail();
+  });
+
+  /* ============================================================
      TELA: CONFIGURAÇÕES
      ============================================================ */
   async function renderSettings(){
@@ -961,25 +1236,30 @@
     const url = document.getElementById("webAppUrl").value.trim();
     await dbPut("config", { key: "webAppUrl", value: url });
     toast(url ? "URL salva." : "URL removida.");
-    syncAll();
+    syncCycle();
   });
   document.getElementById("btnSyncNow").addEventListener("click", () => {
     toast("Sincronizando…");
-    syncAll().then(() => { toast("Sincronização concluída."); renderMenu(); });
+    syncCycle().then(() => { toast("Sincronização concluída."); refreshCurrentView(); });
   });
 
   /* ============================================================
-     STATUS DE CONEXÃO + INICIALIZAÇÃO
+     STATUS DE CONEXÃO + SINCRONIZAÇÃO AUTOMÁTICA + INICIALIZAÇÃO
      ============================================================ */
-  window.addEventListener("online", () => syncAll());
+  window.addEventListener("online", () => syncCycle());
   window.addEventListener("offline", () => setSyncStatus("offline"));
+
+  // Sincronização automática a cada 1 minuto: envia pendências e busca
+  // o estado global mais recente, para que todos os dispositivos
+  // enxerguem as mesmas listas.
+  setInterval(() => { if (navigator.onLine) syncCycle(); }, 60000);
 
   (async function init(){
     await getDB();
     if (!navigator.onLine) setSyncStatus("offline");
     else { const u = await getWebAppUrl(); setSyncStatus(u ? "pendente" : "local"); }
     showView("menu");
-    if (navigator.onLine) syncAll();
+    if (navigator.onLine) syncCycle();
   })();
 
 })();

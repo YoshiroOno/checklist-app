@@ -310,6 +310,7 @@
   .dt-images{ display:flex; }
   .dt-img-col{ flex:1; display:flex; flex-direction:column; min-width:0; }
   .dt-img-col img{ width:100%; height:150px; object-fit:cover; display:block; background: var(--surface-2); }
+  .dt-img-col img.img-empty, .task-card .ref-image.img-empty{ opacity: 0.35; }
   .dt-img-label{
     font-family: var(--mono);
     font-size: 9.5px;
@@ -523,14 +524,14 @@
      normalmente offline e você pode configurá-la depois pela tela
      de Configurações dentro do próprio app.
      ============================================================ */
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwh662us6A629ZXcmGj9uAR2wsGqD5E0Bv2W66z5oCsGqKeeok3TtjKukSm-GLQwYc/exec";
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxeQJMaUm6nMQ6G_ttEH6Tw6aNnB-ooPNdeKinXamG0NsQaWyENAVhX8arowK4fFQ/exec";
 
   /* ============================================================
      BANCO DE DADOS LOCAL (IndexedDB)
      Guarda listas, tarefas (com as imagens em base64) e config.
      ============================================================ */
   const DB_NAME = "checklistDB";
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   let dbInstance = null;
 
   function dbOpen(){
@@ -547,6 +548,9 @@
         }
         if (!db.objectStoreNames.contains("config")) {
           db.createObjectStore("config", { keyPath: "key" });
+        }
+        if (!db.objectStoreNames.contains("imageCache")) {
+          db.createObjectStore("imageCache", { keyPath: "id" });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -630,6 +634,53 @@
       };
       img.onerror = reject;
       reader.readAsDataURL(file);
+    });
+  }
+
+  /* ============================================================
+     RESOLUÇÃO DE IMAGENS SINCRONIZADAS (vindas de outro dispositivo)
+     Localmente, uma tarefa recém-criada já guarda a foto como base64
+     (pronta para exibir). Depois de sincronizada, ela passa a guardar
+     só o ID do arquivo no Drive — para exibir, busca-se a foto (em
+     base64, via o próprio Apps Script) uma vez e guarda em cache local,
+     então nas próximas vezes é instantâneo e funciona offline.
+     ============================================================ */
+  function isImagemPronta(valor){
+    return !valor || valor.indexOf("data:") === 0;
+  }
+
+  async function resolveImageSrc(valor){
+    if (!valor) return "";
+    if (valor.indexOf("data:") === 0) return valor; // já é a imagem em si
+
+    const cache = await dbGet("imageCache", valor);
+    if (cache) return cache.dataUri;
+
+    const url = await getWebAppUrl();
+    if (!url) return "";
+    try{
+      const sep = url.indexOf("?") >= 0 ? "&" : "?";
+      const res = await fetch(url + sep + "imagem=" + encodeURIComponent(valor));
+      const data = await res.json();
+      if (!data || !data.success) return "";
+      const dataUri = "data:" + (data.mime || "image/jpeg") + ";base64," + data.base64;
+      await dbPut("imageCache", { id: valor, dataUri });
+      return dataUri;
+    }catch(err){
+      return "";
+    }
+  }
+
+  // Depois de inserir HTML com <img data-src="..."> (em vez de src direto),
+  // chame isto para carregar cada imagem (do cache local ou buscando uma vez).
+  function hydrateImages(container){
+    container.querySelectorAll("img[data-src]").forEach(img => {
+      const valor = img.getAttribute("data-src");
+      if (!valor){ img.classList.add("img-empty"); return; }
+      resolveImageSrc(valor).then(src => {
+        if (src) img.src = src;
+        else img.classList.add("img-empty");
+      });
     });
   }
 
@@ -737,8 +788,8 @@
           status: rt.status || (local && local.status) || "pendente",
           criadoEm: rt.criadoEm || (local && local.criadoEm) || new Date().toISOString(),
           resolvidoEm: rt.resolvidoEm || (local && local.resolvidoEm) || null,
-          imagemCriacao: rt.fotoCriacaoUrl || (local && local.imagemCriacao) || null,
-          imagemResolucao: rt.fotoResolucaoUrl || (local && local.imagemResolucao) || null,
+          imagemCriacao: rt.fotoCriacaoId || (local && local.imagemCriacao) || null,
+          imagemResolucao: rt.fotoResolucaoId || (local && local.imagemResolucao) || null,
           sincronizado: true
         });
       }
@@ -1017,7 +1068,7 @@
     body.innerHTML = `
       <div class="progress-line">TAREFA ${posicao} DE ${resolveState.totalOriginal}</div>
       <div class="task-card">
-        <img class="ref-image" src="${task.imagemCriacao}" alt="Foto da tarefa">
+        <img class="ref-image" data-src="${escapeHtml(task.imagemCriacao || "")}" alt="Foto da tarefa">
         <div class="ref-body">
           <div class="ref-tag">REGISTRADO EM ${fmtData(task.criadoEm)}</div>
           <div class="ref-text">${escapeHtml(task.texto)}</div>
@@ -1032,6 +1083,8 @@
         </label>
       </div>
       <button class="btn btn-success" id="btnConfirmTask" disabled>Confirmar resolução</button>`;
+
+    hydrateImages(body);
 
     let confirmShot = null;
     document.getElementById("resolveShotInput").addEventListener("change", async (e) => {
@@ -1126,10 +1179,10 @@
         const resolvida = t.status === "resolvida";
         const images = (resolvida && t.imagemResolucao)
           ? `<div class="dt-images">
-               <div class="dt-img-col"><span class="dt-img-label">Registro</span><img src="${t.imagemCriacao || ""}" alt="Foto de registro"></div>
-               <div class="dt-img-col"><span class="dt-img-label">Confirmação</span><img src="${t.imagemResolucao}" alt="Foto de confirmação"></div>
+               <div class="dt-img-col"><span class="dt-img-label">Registro</span><img data-src="${escapeHtml(t.imagemCriacao || "")}" alt="Foto de registro"></div>
+               <div class="dt-img-col"><span class="dt-img-label">Confirmação</span><img data-src="${escapeHtml(t.imagemResolucao)}" alt="Foto de confirmação"></div>
              </div>`
-          : `<div class="dt-images"><div class="dt-img-col"><img src="${t.imagemCriacao || ""}" alt="Foto de registro"></div></div>`;
+          : `<div class="dt-images"><div class="dt-img-col"><img data-src="${escapeHtml(t.imagemCriacao || "")}" alt="Foto de registro"></div></div>`;
         const quando = resolvida ? ("resolvida em " + fmtData(t.resolvidoEm)) : ("criada em " + fmtData(t.criadoEm));
         return `
           <div class="detail-task">
@@ -1143,6 +1196,7 @@
             </div>
           </div>`;
       }).join("");
+      hydrateImages(tasksContainer);
     }
 
     document.getElementById("detailAddComposer").hidden = true;

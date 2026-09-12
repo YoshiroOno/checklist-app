@@ -204,6 +204,7 @@
   .btn-primary{ background: var(--accent); color: var(--accent-ink); }
   .btn-primary:disabled{ opacity:0.45; cursor:not-allowed; }
   .btn-ghost{ background: transparent; border-color: var(--border); color: var(--text); }
+  .btn-danger{ background: transparent; border-color: var(--danger); color: var(--danger); margin-top: 24px; }
   .btn-success{ background: var(--success); color: #0E2118; }
   .btn-row{ display:flex; gap:10px; margin-top: 10px; }
   .btn-row .btn{ width:auto; flex:1; }
@@ -356,6 +357,41 @@
   .toast.show{ opacity:1; }
 
   [hidden]{ display:none !important; }
+
+  /* ---- imagem expandida (toque numa foto de tarefa/resolução) ---- */
+  .lightbox{
+    position: fixed;
+    inset: 0;
+    background: rgba(10,11,13,0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 200;
+  }
+  .lightbox img{
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+  .lightbox-close{
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .lightbox-close svg{ width: 20px; height: 20px; }
+  .dt-img-col img, .task-card .ref-image, .confirm-zone img{ cursor: pointer; }
 </style>
 </head>
 <body>
@@ -482,6 +518,8 @@
 
     <div class="section-label">TAREFAS</div>
     <div id="detailTasksContainer"></div>
+
+    <button class="btn btn-danger" id="btnDetailDelete">Excluir lista</button>
   </main>
 
   <!-- ===================== TELA: CONFIGURAÇÕES ===================== -->
@@ -507,6 +545,13 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="lightbox" id="lightbox" hidden>
+  <button class="lightbox-close" id="lightboxClose" aria-label="Fechar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+  </button>
+  <img id="lightboxImg" src="" alt="Foto ampliada">
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -524,14 +569,14 @@
      normalmente offline e você pode configurá-la depois pela tela
      de Configurações dentro do próprio app.
      ============================================================ */
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxeQJMaUm6nMQ6G_ttEH6Tw6aNnB-ooPNdeKinXamG0NsQaWyENAVhX8arowK4fFQ/exec";
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzDy-pFZMFh1XkP6VTR5wU956IkPLzAdU7b3Y0cZH036aeNSYp2ZR60Doqn0wigGQ3I/exec";
 
   /* ============================================================
      BANCO DE DADOS LOCAL (IndexedDB)
      Guarda listas, tarefas (com as imagens em base64) e config.
      ============================================================ */
   const DB_NAME = "checklistDB";
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   let dbInstance = null;
 
   function dbOpen(){
@@ -552,6 +597,9 @@
         if (!db.objectStoreNames.contains("imageCache")) {
           db.createObjectStore("imageCache", { keyPath: "id" });
         }
+        if (!db.objectStoreNames.contains("pendingDeletes")) {
+          db.createObjectStore("pendingDeletes", { keyPath: "id" });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -569,6 +617,16 @@
       const t = db.transaction([storeName], "readwrite");
       t.objectStore(storeName).put(value);
       t.oncomplete = () => resolve(value);
+      t.onerror = () => reject(t.error);
+    });
+  }
+
+  async function dbDelete(storeName, key){
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+      const t = db.transaction([storeName], "readwrite");
+      t.objectStore(storeName).delete(key);
+      t.oncomplete = () => resolve(true);
       t.onerror = () => reject(t.error);
     });
   }
@@ -735,7 +793,24 @@
     let allOk = true;
     for (const l of lists.filter(l => !l.sincronizado)) { allOk = (await syncList(l)) && allOk; }
     for (const t of tasks.filter(t => !t.sincronizado)) { allOk = (await syncTask(t)) && allOk; }
+    allOk = (await pushPendingDeletes()) && allOk;
     setSyncStatus(allOk ? "sincronizado" : "pendente");
+    return allOk;
+  }
+
+  // Envia para a planilha as exclusões de lista feitas localmente. Enquanto
+  // não confirmado pelo servidor, o id continua na fila e a lista não volta
+  // a aparecer localmente (veja o filtro em mergeRemoteData).
+  async function pushPendingDeletes(){
+    const url = await getWebAppUrl();
+    if (!url) return true;
+    const pendentes = await dbGetAll("pendingDeletes");
+    let allOk = true;
+    for (const p of pendentes){
+      const r = await postToSheet({ tipo: "excluirLista", id: p.id });
+      if (r.ok) await dbDelete("pendingDeletes", p.id);
+      else allOk = false;
+    }
     return allOk;
   }
 
@@ -760,12 +835,22 @@
   // Nunca sobrescreve uma lista/tarefa criada/editada localmente que ainda
   // não foi enviada (sincronizado:false) — ela será enviada e só então
   // substituída pela versão "oficial" na próxima sincronização.
+  // Também remove localmente qualquer lista/tarefa que já não existe mais
+  // na planilha (por exemplo, se alguém apagou a linha manualmente).
   async function mergeRemoteData(listasRemotas, tarefasRemotas){
-    const [listasLocais, tarefasLocais] = await Promise.all([dbGetAll("lists"), dbGetAll("tasks")]);
+    const [listasLocais, tarefasLocais, pendentesExclusao] = await Promise.all([
+      dbGetAll("lists"), dbGetAll("tasks"), dbGetAll("pendingDeletes")
+    ]);
+    const idsPendentesExclusao = new Set(pendentesExclusao.map(p => p.id));
     const mapaListas = new Map(listasLocais.map(l => [l.id, l]));
     const mapaTarefas = new Map(tarefasLocais.map(t => [t.id, t]));
 
-    for (const rl of listasRemotas){
+    // Ignora, na planilha, o que já foi apagado localmente e ainda não
+    // teve a exclusão confirmada no servidor — senão o pull traria de volta.
+    const listasRemotasValidas = listasRemotas.filter(rl => !idsPendentesExclusao.has(rl.id));
+    const tarefasRemotasValidas = tarefasRemotas.filter(rt => !idsPendentesExclusao.has(rt.listId));
+
+    for (const rl of listasRemotasValidas){
       const local = mapaListas.get(rl.id);
       if (!local || local.sincronizado){
         await dbPut("lists", {
@@ -778,7 +863,7 @@
       }
     }
 
-    for (const rt of tarefasRemotas){
+    for (const rt of tarefasRemotasValidas){
       const local = mapaTarefas.get(rt.id);
       if (!local || local.sincronizado){
         await dbPut("tasks", {
@@ -792,6 +877,26 @@
           imagemResolucao: rt.fotoResolucaoId || (local && local.imagemResolucao) || null,
           sincronizado: true
         });
+      }
+    }
+
+    // Lista sincronizada que sumiu da planilha (alguém apagou a linha lá):
+    // remove ela e as tarefas dela também daqui.
+    const idsListasRemotas = new Set(listasRemotas.map(l => l.id));
+    for (const l of listasLocais){
+      if (l.sincronizado && !idsListasRemotas.has(l.id) && !idsPendentesExclusao.has(l.id)){
+        await dbDelete("lists", l.id);
+        const tarefasDaLista = await dbGetAllByIndex("tasks", "listId", l.id);
+        for (const t of tarefasDaLista) await dbDelete("tasks", t.id);
+      }
+    }
+
+    // Tarefa sincronizada que sumiu da planilha, mas a lista dela continua:
+    // remove só a tarefa.
+    const idsTarefasRemotas = new Set(tarefasRemotas.map(t => t.id));
+    for (const t of tarefasLocais){
+      if (t.sincronizado && idsListasRemotas.has(t.listId) && !idsTarefasRemotas.has(t.id)){
+        await dbDelete("tasks", t.id);
       }
     }
   }
@@ -856,6 +961,26 @@
     clearTimeout(toast._h);
     toast._h = setTimeout(() => t.classList.remove("show"), 2600);
   }
+
+  // Toque em qualquer foto de tarefa (registro, confirmação, ou prévia
+  // durante a resolução) abre ela ampliada, com um X para fechar.
+  function openLightbox(src){
+    if (!src) return;
+    document.getElementById("lightboxImg").src = src;
+    document.getElementById("lightbox").hidden = false;
+  }
+  function closeLightbox(){
+    document.getElementById("lightbox").hidden = true;
+    document.getElementById("lightboxImg").src = "";
+  }
+  document.getElementById("lightboxClose").addEventListener("click", closeLightbox);
+  document.getElementById("lightbox").addEventListener("click", (e) => {
+    if (e.target.id === "lightbox") closeLightbox();
+  });
+  document.body.addEventListener("click", (e) => {
+    const img = e.target.closest(".dt-img-col img, .task-card .ref-image, .confirm-zone img");
+    if (img && img.getAttribute("src")) openLightbox(img.src);
+  });
 
   function fmtData(iso){
     try{
@@ -1264,6 +1389,23 @@
     toast("Tarefa adicionada.");
     btn.disabled = false;
     renderListDetail();
+  });
+
+  document.getElementById("btnDetailDelete").addEventListener("click", async () => {
+    const listId = currentDetailListId;
+    const list = await dbGet("lists", listId);
+    if (!list) return;
+    const confirmado = confirm(`Excluir a lista "${list.nome}"? Ela e suas tarefas somem deste dispositivo e da planilha, para todo mundo.`);
+    if (!confirmado) return;
+
+    const tarefas = await dbGetAllByIndex("tasks", "listId", listId);
+    for (const t of tarefas) await dbDelete("tasks", t.id);
+    await dbDelete("lists", listId);
+    await dbPut("pendingDeletes", { id: listId });
+
+    toast("Lista excluída.");
+    showView("menu");
+    pushPendingDeletes();
   });
 
   /* ============================================================

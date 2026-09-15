@@ -319,7 +319,26 @@
     border-radius: var(--radius);
     margin-bottom: 10px;
     overflow: hidden;
+    position: relative;
   }
+  .dt-delete{
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(20,22,25,0.75);
+    border: 1px solid var(--border);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .dt-delete:active{ transform: scale(0.94); }
+  .dt-delete svg{ width:16px; height:16px; }
   .dt-images{ display:flex; }
   .dt-img-col{ flex:1; display:flex; flex-direction:column; min-width:0; }
   .dt-img-col img{ width:100%; height:150px; object-fit:cover; display:block; background: var(--surface-2); }
@@ -589,7 +608,7 @@
      normalmente offline e você pode configurá-la depois pela tela
      de Configurações dentro do próprio app.
      ============================================================ */
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzDy-pFZMFh1XkP6VTR5wU956IkPLzAdU7b3Y0cZH036aeNSYp2ZR60Doqn0wigGQ3I/exec";
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwXAPX2rSXwmnEYuignceapeszfm-GGl_riBw8srFGy_yqUlPGp-AD6RhiKTf8bWV26/exec";
 
   /* ============================================================
      BANCO DE DADOS LOCAL (IndexedDB)
@@ -840,7 +859,8 @@
     const pendentes = await dbGetAll("pendingDeletes");
     let allOk = true;
     for (const p of pendentes){
-      const r = await postToSheet({ tipo: "excluirLista", id: p.id });
+      const tipoRemoto = p.tipo === "tarefa" ? "excluirTarefa" : "excluirLista";
+      const r = await postToSheet({ tipo: tipoRemoto, id: p.id });
       if (r.ok) await dbDelete("pendingDeletes", p.id);
       else allOk = false;
     }
@@ -879,14 +899,16 @@
     const [listasLocais, tarefasLocais, pendentesExclusao] = await Promise.all([
       dbGetAll("lists"), dbGetAll("tasks"), dbGetAll("pendingDeletes")
     ]);
-    const idsPendentesExclusao = new Set(pendentesExclusao.map(p => p.id));
+    const idsPendentesListaExclusao = new Set(pendentesExclusao.filter(p => p.tipo !== "tarefa").map(p => p.id));
+    const idsPendentesTarefaExclusao = new Set(pendentesExclusao.filter(p => p.tipo === "tarefa").map(p => p.id));
     const mapaListas = new Map(listasLocais.map(l => [l.id, l]));
     const mapaTarefas = new Map(tarefasLocais.map(t => [t.id, t]));
 
     // Ignora, na planilha, o que já foi apagado localmente e ainda não
     // teve a exclusão confirmada no servidor — senão o pull traria de volta.
-    const listasRemotasValidas = listasRemotas.filter(rl => !idsPendentesExclusao.has(rl.id));
-    const tarefasRemotasValidas = tarefasRemotas.filter(rt => !idsPendentesExclusao.has(rt.listId));
+    const listasRemotasValidas = listasRemotas.filter(rl => !idsPendentesListaExclusao.has(rl.id));
+    const tarefasRemotasValidas = tarefasRemotas.filter(rt =>
+      !idsPendentesListaExclusao.has(rt.listId) && !idsPendentesTarefaExclusao.has(rt.id));
 
     for (const rl of listasRemotasValidas){
       const local = mapaListas.get(rl.id);
@@ -924,7 +946,7 @@
     const idsListasRemotas = new Set(listasRemotas.map(l => l.id));
     for (const l of listasLocais){
       if (l.sincronizado && !l.ausenteDaPlanilha && criadoHoje(l.criadoEm)
-          && !idsListasRemotas.has(l.id) && !idsPendentesExclusao.has(l.id)){
+          && !idsListasRemotas.has(l.id) && !idsPendentesListaExclusao.has(l.id)){
         await dbPut("lists", Object.assign({}, l, { ausenteDaPlanilha: true }));
       }
     }
@@ -1345,6 +1367,9 @@
         return `
           <div class="detail-task">
             ${images}
+            <button class="dt-delete" data-task-id="${t.id}" aria-label="Excluir tarefa">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>
+            </button>
             <div class="dt-body">
               <div class="dt-text">${escapeHtml(t.texto)}</div>
               <div class="dt-meta">
@@ -1436,7 +1461,7 @@
     const tarefas = await dbGetAllByIndex("tasks", "listId", listId);
     for (const t of tarefas) await dbDelete("tasks", t.id);
     await dbDelete("lists", listId);
-    await dbPut("pendingDeletes", { id: listId });
+    await dbPut("pendingDeletes", { id: listId, tipo: "lista" });
 
     toast("Lista excluída.");
     showView("menu");
@@ -1444,6 +1469,26 @@
   }
   document.getElementById("btnDetailDelete").addEventListener("click", excluirListaAtual);
   document.getElementById("btnDetailDeleteFromBanner").addEventListener("click", excluirListaAtual);
+
+  // Excluir uma tarefa específica de dentro da lista (ícone no canto da foto).
+  async function excluirTarefa(taskId){
+    const task = await dbGet("tasks", taskId);
+    if (!task) return;
+    const confirmado = confirm("Excluir esta tarefa? Ela some deste dispositivo e da planilha, para todo mundo.");
+    if (!confirmado) return;
+
+    await dbDelete("tasks", taskId);
+    await dbPut("pendingDeletes", { id: taskId, tipo: "tarefa" });
+    await finalizeList(task.listId); // se não sobrou pendência, a lista fecha sozinha
+
+    toast("Tarefa excluída.");
+    renderListDetail();
+    pushPendingDeletes();
+  }
+  document.getElementById("detailTasksContainer").addEventListener("click", (e) => {
+    const btn = e.target.closest(".dt-delete");
+    if (btn) excluirTarefa(btn.getAttribute("data-task-id"));
+  });
 
   // Reenvia para a planilha uma lista marcada como "ausente" — recria a
   // linha dela e das tarefas, como se fosse uma sincronização nova.

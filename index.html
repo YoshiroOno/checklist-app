@@ -145,6 +145,7 @@
   }
   .list-row.status-aberta{ border-left-color: var(--accent); }
   .list-row.status-concluida{ border-left-color: var(--success); }
+  .list-row.ausente{ border-left-color: var(--danger); }
   .list-row .info{ flex:1; min-width:0; }
   .list-row .name{ font-size: 14px; font-weight: 600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .list-row .meta{ font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top:3px; }
@@ -208,6 +209,7 @@
   .btn-success{ background: var(--success); color: #0E2118; }
   .btn-row{ display:flex; gap:10px; margin-top: 10px; }
   .btn-row .btn{ width:auto; flex:1; }
+  .btn-row .btn-danger{ margin-top:0; }
 
   .back-row{
     display:flex; align-items:center; gap:10px;
@@ -299,6 +301,16 @@
   .status-badge.resolvida{ color: var(--success); border-color: var(--success); }
   .status-badge.aberta{ color: var(--accent); border-color: var(--accent); }
   .status-badge.concluida{ color: var(--success); border-color: var(--success); }
+  .status-badge.ausente{ color: var(--danger); border-color: var(--danger); flex:none; }
+
+  .alert-box{
+    background: rgba(226,87,76,0.12);
+    border: 1px solid var(--danger);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 18px;
+  }
+  .alert-box p{ margin: 0 0 12px; font-size: 13.5px; line-height:1.5; color: var(--text); }
   .detail-actions{ display:flex; flex-direction:column; gap:10px; margin-bottom: 20px; }
 
   .detail-task{
@@ -497,6 +509,14 @@
       <span class="note" id="detailListMeta" style="margin:0;"></span>
     </div>
 
+    <div class="alert-box" id="detailAusenteBanner" hidden>
+      <p>Esta lista não existe mais na planilha. Deseja sincronizar ou excluir?</p>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnDetailResync">Sincronizar</button>
+        <button class="btn btn-danger" id="btnDetailDeleteFromBanner">Excluir</button>
+      </div>
+    </div>
+
     <div class="detail-actions">
       <button class="btn btn-success" id="btnDetailResolve" hidden>Resolver pendências</button>
       <button class="btn btn-ghost" id="btnDetailAddTask">+ Adicionar tarefa</button>
@@ -569,7 +589,7 @@
      normalmente offline e você pode configurá-la depois pela tela
      de Configurações dentro do próprio app.
      ============================================================ */
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzDy-pFZMFh1XkP6VTR5wU956IkPLzAdU7b3Y0cZH036aeNSYp2ZR60Doqn0wigGQ3I/exec";
+  const WEB_APP_URL = "";
 
   /* ============================================================
      BANCO DE DADOS LOCAL (IndexedDB)
@@ -785,20 +805,33 @@
     return r.ok;
   }
 
+  // Só listas criadas hoje entram na sincronização automática — listas de
+  // dias anteriores ficam "congeladas" no dispositivo, sem ficar buscando
+  // ou reenviando um histórico cada vez maior a cada minuto.
+  function criadoHoje(iso){
+    if (!iso) return false;
+    const d = new Date(iso);
+    if (isNaN(d)) return false;
+    const hoje = new Date();
+    return d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth() && d.getDate() === hoje.getDate();
+  }
+
   async function syncAll(){
     const url = await getWebAppUrl();
     if (!url){ setSyncStatus("local"); return; }
     setSyncStatus("sincronizando");
     const [lists, tasks] = await Promise.all([dbGetAll("lists"), dbGetAll("tasks")]);
+    const idsListasHoje = new Set(lists.filter(l => criadoHoje(l.criadoEm)).map(l => l.id));
     let allOk = true;
-    for (const l of lists.filter(l => !l.sincronizado)) { allOk = (await syncList(l)) && allOk; }
-    for (const t of tasks.filter(t => !t.sincronizado)) { allOk = (await syncTask(t)) && allOk; }
+    for (const l of lists.filter(l => !l.sincronizado && idsListasHoje.has(l.id))) { allOk = (await syncList(l)) && allOk; }
+    for (const t of tasks.filter(t => !t.sincronizado && idsListasHoje.has(t.listId))) { allOk = (await syncTask(t)) && allOk; }
     allOk = (await pushPendingDeletes()) && allOk;
     setSyncStatus(allOk ? "sincronizado" : "pendente");
     return allOk;
   }
 
-  // Envia para a planilha as exclusões de lista feitas localmente. Enquanto
+  // Envia para a planilha as exclusões de lista feitas localmente (sem
+  // restrição de data — excluir é uma ação explícita do usuário). Enquanto
   // não confirmado pelo servidor, o id continua na fila e a lista não volta
   // a aparecer localmente (veja o filtro em mergeRemoteData).
   async function pushPendingDeletes(){
@@ -815,7 +848,8 @@
   }
 
   // Busca o estado completo (todas as listas/tarefas) direto da planilha,
-  // para que qualquer dispositivo enxergue o que foi feito nos outros.
+  // mas só considera listas criadas hoje — o resto fica de fora da
+  // sincronização automática.
   async function pullAll(){
     const url = await getWebAppUrl();
     if (!url) return false;
@@ -824,19 +858,23 @@
       const res = await fetch(url + sep + "action=listarTudo");
       const data = await res.json();
       if (!data || !data.success) return false;
-      await mergeRemoteData(data.listas || [], data.tarefas || []);
+      const listasHoje = (data.listas || []).filter(l => criadoHoje(l.criadoEm));
+      const idsListasHoje = new Set(listasHoje.map(l => l.id));
+      const tarefasHoje = (data.tarefas || []).filter(t => idsListasHoje.has(t.listId));
+      await mergeRemoteData(listasHoje, tarefasHoje);
       return true;
     }catch(err){
       return false;
     }
   }
 
-  // Mescla os dados vindos da planilha com o banco local.
-  // Nunca sobrescreve uma lista/tarefa criada/editada localmente que ainda
-  // não foi enviada (sincronizado:false) — ela será enviada e só então
-  // substituída pela versão "oficial" na próxima sincronização.
-  // Também remove localmente qualquer lista/tarefa que já não existe mais
-  // na planilha (por exemplo, se alguém apagou a linha manualmente).
+  // Mescla os dados vindos da planilha (só do dia de hoje) com o banco
+  // local. Nunca sobrescreve uma lista/tarefa criada/editada localmente que
+  // ainda não foi enviada (sincronizado:false) — ela será enviada e só
+  // então substituída pela versão "oficial" na próxima sincronização.
+  // Se uma lista de hoje, já sincronizada, sumiu da planilha (por exemplo,
+  // alguém apagou a linha manualmente), ela NÃO é apagada sozinha — só fica
+  // marcada como "ausente da planilha", e o usuário decide o que fazer.
   async function mergeRemoteData(listasRemotas, tarefasRemotas){
     const [listasLocais, tarefasLocais, pendentesExclusao] = await Promise.all([
       dbGetAll("lists"), dbGetAll("tasks"), dbGetAll("pendingDeletes")
@@ -858,7 +896,8 @@
           nome: rl.nome || (local && local.nome) || "",
           criadoEm: rl.criadoEm || (local && local.criadoEm) || new Date().toISOString(),
           status: rl.status || (local && local.status) || "aberta",
-          sincronizado: true
+          sincronizado: true,
+          ausenteDaPlanilha: false
         });
       }
     }
@@ -880,23 +919,13 @@
       }
     }
 
-    // Lista sincronizada que sumiu da planilha (alguém apagou a linha lá):
-    // remove ela e as tarefas dela também daqui.
+    // Lista de hoje, sincronizada, que sumiu da planilha: só marca —
+    // quem decide se sincroniza de novo ou exclui é o usuário.
     const idsListasRemotas = new Set(listasRemotas.map(l => l.id));
     for (const l of listasLocais){
-      if (l.sincronizado && !idsListasRemotas.has(l.id) && !idsPendentesExclusao.has(l.id)){
-        await dbDelete("lists", l.id);
-        const tarefasDaLista = await dbGetAllByIndex("tasks", "listId", l.id);
-        for (const t of tarefasDaLista) await dbDelete("tasks", t.id);
-      }
-    }
-
-    // Tarefa sincronizada que sumiu da planilha, mas a lista dela continua:
-    // remove só a tarefa.
-    const idsTarefasRemotas = new Set(tarefasRemotas.map(t => t.id));
-    for (const t of tarefasLocais){
-      if (t.sincronizado && idsListasRemotas.has(t.listId) && !idsTarefasRemotas.has(t.id)){
-        await dbDelete("tasks", t.id);
+      if (l.sincronizado && !l.ausenteDaPlanilha && criadoHoje(l.criadoEm)
+          && !idsListasRemotas.has(l.id) && !idsPendentesExclusao.has(l.id)){
+        await dbPut("lists", Object.assign({}, l, { ausenteDaPlanilha: true }));
       }
     }
   }
@@ -1005,12 +1034,14 @@
       const total = tasks.length;
       const resolvidas = tasks.filter(t => t.status === "resolvida").length;
       const semSync = !l.sincronizado || tasks.some(t => !t.sincronizado);
+      const avisoAusente = l.ausenteDaPlanilha ? '<span class="status-badge ausente">local</span>' : "";
       return `
-        <div class="list-row status-${l.status}" data-list-id="${l.id}">
+        <div class="list-row status-${l.status}${l.ausenteDaPlanilha ? " ausente" : ""}" data-list-id="${l.id}">
           <div class="info">
             <div class="name">${escapeHtml(l.nome)}</div>
             <div class="meta">${fmtData(l.criadoEm)}</div>
           </div>
+          ${avisoAusente}
           <span class="count">${resolvidas}/${total}</span>
           <span class="dot sync-dot ${semSync ? "pending" : "ok"}" title="${semSync ? "aguardando sincronização" : "sincronizado"}"></span>
         </div>`;
@@ -1292,6 +1323,8 @@
     badge.textContent = list.status === "concluida" ? "concluída" : "aberta";
     badge.className = "status-badge " + list.status;
 
+    document.getElementById("detailAusenteBanner").hidden = !list.ausenteDaPlanilha;
+
     const resolveBtn = document.getElementById("btnDetailResolve");
     resolveBtn.hidden = pendentes === 0;
     resolveBtn.textContent = `Resolver pendências (${pendentes})`;
@@ -1391,7 +1424,9 @@
     renderListDetail();
   });
 
-  document.getElementById("btnDetailDelete").addEventListener("click", async () => {
+  // Compartilhada pelo botão "Excluir lista" (rodapé) e pelo botão "Excluir"
+  // do aviso de lista ausente da planilha.
+  async function excluirListaAtual(){
     const listId = currentDetailListId;
     const list = await dbGet("lists", listId);
     if (!list) return;
@@ -1406,6 +1441,34 @@
     toast("Lista excluída.");
     showView("menu");
     pushPendingDeletes();
+  }
+  document.getElementById("btnDetailDelete").addEventListener("click", excluirListaAtual);
+  document.getElementById("btnDetailDeleteFromBanner").addEventListener("click", excluirListaAtual);
+
+  // Reenvia para a planilha uma lista marcada como "ausente" — recria a
+  // linha dela e das tarefas, como se fosse uma sincronização nova.
+  document.getElementById("btnDetailResync").addEventListener("click", async () => {
+    const listId = currentDetailListId;
+    const list = await dbGet("lists", listId);
+    if (!list) return;
+    const btn = document.getElementById("btnDetailResync");
+    btn.disabled = true;
+    btn.textContent = "Sincronizando…";
+
+    list.sincronizado = false;
+    list.ausenteDaPlanilha = false;
+    await dbPut("lists", list);
+    const tarefas = await dbGetAllByIndex("tasks", "listId", listId);
+    for (const t of tarefas){
+      t.sincronizado = false;
+      await dbPut("tasks", t);
+    }
+
+    await syncAll();
+    toast("Lista sincronizada com a planilha novamente.");
+    btn.disabled = false;
+    btn.textContent = "Sincronizar";
+    renderListDetail();
   });
 
   /* ============================================================

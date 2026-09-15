@@ -931,7 +931,7 @@
   }
 
   // Ciclo completo: envia o que está pendente e depois busca o estado global.
-  // É isso que roda a cada 1 minuto e no botão "Sincronizar agora".
+  // É isso que roda a cada 20 segundos e no botão "Sincronizar agora".
   async function syncCycle(){
     const url = await getWebAppUrl();
     if (!url){ setSyncStatus("local"); return; }
@@ -1508,10 +1508,10 @@
   window.addEventListener("online", () => syncCycle());
   window.addEventListener("offline", () => setSyncStatus("offline"));
 
-  // Sincronização automática a cada 1 minuto: envia pendências e busca
+  // Sincronização automática a cada 20 segundos: envia pendências e busca
   // o estado global mais recente, para que todos os dispositivos
   // enxerguem as mesmas listas.
-  setInterval(() => { if (navigator.onLine) syncCycle(); }, 60000);
+  setInterval(() => { if (navigator.onLine) syncCycle(); }, 20000);
 
   (async function init(){
     await getDB();

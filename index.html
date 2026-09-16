@@ -302,6 +302,7 @@
   .status-badge.aberta{ color: var(--accent); border-color: var(--accent); }
   .status-badge.concluida{ color: var(--success); border-color: var(--success); }
   .status-badge.ausente{ color: var(--danger); border-color: var(--danger); flex:none; }
+  .status-badge.vazia{ color: var(--text-dim); border-color: var(--text-dim); flex:none; }
 
   .alert-box{
     background: rgba(226,87,76,0.12);
@@ -310,6 +311,8 @@
     padding: 14px;
     margin-bottom: 18px;
   }
+  .alert-box.neutral{ background: var(--surface-2); border-color: var(--border); }
+  .alert-box .btn-danger{ margin-top:0; }
   .alert-box p{ margin: 0 0 12px; font-size: 13.5px; line-height:1.5; color: var(--text); }
   .detail-actions{ display:flex; flex-direction:column; gap:10px; margin-bottom: 20px; }
 
@@ -536,6 +539,11 @@
       </div>
     </div>
 
+    <div class="alert-box neutral" id="detailVaziaBanner" hidden>
+      <p>Esta lista não tem mais tarefas. Você pode adicionar uma nova ou excluir a lista.</p>
+      <button class="btn btn-danger" id="btnDetailDeleteEmpty">Excluir lista</button>
+    </div>
+
     <div class="detail-actions">
       <button class="btn btn-success" id="btnDetailResolve" hidden>Resolver pendências</button>
       <button class="btn btn-ghost" id="btnDetailAddTask">+ Adicionar tarefa</button>
@@ -608,7 +616,7 @@
      normalmente offline e você pode configurá-la depois pela tela
      de Configurações dentro do próprio app.
      ============================================================ */
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwXAPX2rSXwmnEYuignceapeszfm-GGl_riBw8srFGy_yqUlPGp-AD6RhiKTf8bWV26/exec";
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzJXnHOMJprO8lPUBGkpAy4kjrl6HEbf8GDn6qUg0jcPUCfTv9ZD0QYW6LFQLwSQlT_/exec";
 
   /* ============================================================
      BANCO DE DADOS LOCAL (IndexedDB)
@@ -814,13 +822,24 @@
   }
 
   async function syncTask(task){
+    // Só manda a imagem em base64 se ela ainda não foi confirmada como
+    // enviada — evita recriar o arquivo no Drive toda vez que a tarefa é
+    // resincronizada por outro motivo (ex: ao resolver, ou numa nova
+    // tentativa depois de uma falha de rede).
+    const enviarCriacao = !task.imagemCriacaoEnviada && task.imagemCriacao && task.imagemCriacao.indexOf("data:") === 0;
+    const enviarResolucao = !task.imagemResolucaoEnviada && task.imagemResolucao && task.imagemResolucao.indexOf("data:") === 0;
     const r = await postToSheet({
       tipo: "tarefa", id: task.id, listId: task.listId, texto: task.texto, status: task.status,
       criadoEm: task.criadoEm, resolvidoEm: task.resolvidoEm || "",
-      imagemCriacaoBase64: task.imagemCriacao || "",
-      imagemResolucaoBase64: task.imagemResolucao || ""
+      imagemCriacaoBase64: enviarCriacao ? task.imagemCriacao : "",
+      imagemResolucaoBase64: enviarResolucao ? task.imagemResolucao : ""
     });
-    if (r.ok){ task.sincronizado = true; await dbPut("tasks", task); }
+    if (r.ok){
+      task.sincronizado = true;
+      if (enviarCriacao) task.imagemCriacaoEnviada = true;
+      if (enviarResolucao) task.imagemResolucaoEnviada = true;
+      await dbPut("tasks", task);
+    }
     return r.ok;
   }
 
@@ -936,6 +955,8 @@
           resolvidoEm: rt.resolvidoEm || (local && local.resolvidoEm) || null,
           imagemCriacao: rt.fotoCriacaoId || (local && local.imagemCriacao) || null,
           imagemResolucao: rt.fotoResolucaoId || (local && local.imagemResolucao) || null,
+          imagemCriacaoEnviada: !!rt.fotoCriacaoId || (local && local.imagemCriacaoEnviada) || false,
+          imagemResolucaoEnviada: !!rt.fotoResolucaoId || (local && local.imagemResolucaoEnviada) || false,
           sincronizado: true
         });
       }
@@ -948,6 +969,18 @@
       if (l.sincronizado && !l.ausenteDaPlanilha && criadoHoje(l.criadoEm)
           && !idsListasRemotas.has(l.id) && !idsPendentesListaExclusao.has(l.id)){
         await dbPut("lists", Object.assign({}, l, { ausenteDaPlanilha: true }));
+      }
+    }
+
+    // Tarefa sincronizada, cuja lista continua na planilha (de hoje), mas
+    // que sumiu da aba "Tarefas": foi excluída em outro dispositivo — aqui
+    // pode remover direto, sem perguntar, porque a exclusão já passou por
+    // confirmação em quem excluiu.
+    const idsTarefasRemotas = new Set(tarefasRemotas.map(t => t.id));
+    for (const t of tarefasLocais){
+      if (t.sincronizado && idsListasRemotas.has(t.listId) && !idsTarefasRemotas.has(t.id)
+          && !idsPendentesTarefaExclusao.has(t.id)){
+        await dbDelete("tasks", t.id);
       }
     }
   }
@@ -1057,12 +1090,14 @@
       const resolvidas = tasks.filter(t => t.status === "resolvida").length;
       const semSync = !l.sincronizado || tasks.some(t => !t.sincronizado);
       const avisoAusente = l.ausenteDaPlanilha ? '<span class="status-badge ausente">local</span>' : "";
+      const avisoVazia = (!l.ausenteDaPlanilha && total === 0) ? '<span class="status-badge vazia">vazia</span>' : "";
       return `
         <div class="list-row status-${l.status}${l.ausenteDaPlanilha ? " ausente" : ""}" data-list-id="${l.id}">
           <div class="info">
             <div class="name">${escapeHtml(l.nome)}</div>
             <div class="meta">${fmtData(l.criadoEm)}</div>
           </div>
+          ${avisoVazia}
           ${avisoAusente}
           <span class="count">${resolvidas}/${total}</span>
           <span class="dot sync-dot ${semSync ? "pending" : "ok"}" title="${semSync ? "aguardando sincronização" : "sincronizado"}"></span>
@@ -1168,7 +1203,8 @@
     for (const t of stagedTasks){
       await dbPut("tasks", {
         id: t.id, listId, texto: t.texto, imagemCriacao: t.imagem, imagemResolucao: null,
-        status: "pendente", criadoEm: now, resolvidoEm: null, sincronizado: false
+        status: "pendente", criadoEm: now, resolvidoEm: null, sincronizado: false,
+        imagemCriacaoEnviada: false, imagemResolucaoEnviada: false
       });
     }
     toast(`Lista salva com ${stagedTasks.length} tarefa(s).`);
@@ -1346,6 +1382,7 @@
     badge.className = "status-badge " + list.status;
 
     document.getElementById("detailAusenteBanner").hidden = !list.ausenteDaPlanilha;
+    document.getElementById("detailVaziaBanner").hidden = list.ausenteDaPlanilha || tasks.length > 0;
 
     const resolveBtn = document.getElementById("btnDetailResolve");
     resolveBtn.hidden = pendentes === 0;
@@ -1431,7 +1468,8 @@
     const now = new Date().toISOString();
     const task = {
       id: uuid(), listId: currentDetailListId, texto, imagemCriacao: detailAddShot,
-      imagemResolucao: null, status: "pendente", criadoEm: now, resolvidoEm: null, sincronizado: false
+      imagemResolucao: null, status: "pendente", criadoEm: now, resolvidoEm: null, sincronizado: false,
+      imagemCriacaoEnviada: false, imagemResolucaoEnviada: false
     };
     await dbPut("tasks", task);
     syncTask(task);
@@ -1469,6 +1507,7 @@
   }
   document.getElementById("btnDetailDelete").addEventListener("click", excluirListaAtual);
   document.getElementById("btnDetailDeleteFromBanner").addEventListener("click", excluirListaAtual);
+  document.getElementById("btnDetailDeleteEmpty").addEventListener("click", excluirListaAtual);
 
   // Excluir uma tarefa específica de dentro da lista (ícone no canto da foto).
   async function excluirTarefa(taskId){
@@ -1505,7 +1544,19 @@
     await dbPut("lists", list);
     const tarefas = await dbGetAllByIndex("tasks", "listId", listId);
     for (const t of tarefas){
+      // Se a imagem já tinha virado só um ID do Drive (não é mais o base64
+      // original), busca no cache local para conseguir reenviar de verdade.
+      if (t.imagemCriacao && t.imagemCriacao.indexOf("data:") !== 0){
+        const cache = await dbGet("imageCache", t.imagemCriacao);
+        if (cache) t.imagemCriacao = cache.dataUri;
+      }
+      if (t.imagemResolucao && t.imagemResolucao.indexOf("data:") !== 0){
+        const cache = await dbGet("imageCache", t.imagemResolucao);
+        if (cache) t.imagemResolucao = cache.dataUri;
+      }
       t.sincronizado = false;
+      t.imagemCriacaoEnviada = false;
+      t.imagemResolucaoEnviada = false;
       await dbPut("tasks", t);
     }
 

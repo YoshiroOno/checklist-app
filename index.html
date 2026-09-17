@@ -426,6 +426,59 @@
   }
   .lightbox-close svg{ width: 20px; height: 20px; }
   .dt-img-col img, .task-card .ref-image, .confirm-zone img{ cursor: pointer; }
+
+  /* ---- exportação em PDF (via impressão do navegador) ---- */
+  .print-only{ display:none; }
+  @media print{
+    @page{ margin: 14mm; }
+    html, body{ background:#fff; }
+    body *{ visibility: hidden; }
+    #printSheet, #printSheet *{ visibility: visible; }
+    #printSheet{
+      display:block !important;
+      position:absolute;
+      left:0; top:0;
+      width:100%;
+      background:#fff;
+      color:#111;
+      font-family: var(--sans);
+    }
+    .print-header{
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #111;
+    }
+    .print-header h1{ margin:0 0 4px; font-size: 20px; }
+    .print-meta{ font-size: 11px; color:#444; }
+    .print-task{
+      display:flex;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid #ccc;
+      page-break-inside: avoid;
+    }
+    .print-task-head{
+      display:flex; flex-direction:column; gap:5px;
+      min-width: 84px;
+      flex:none;
+    }
+    .print-task-num{ font-weight:700; font-size:13px; }
+    .print-task-status{ font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; color:#555; }
+    .print-task-img{
+      width: 230px;
+      height: 172px;
+      object-fit: cover;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      flex:none;
+    }
+    .print-task-img-empty{
+      display:flex; align-items:center; justify-content:center;
+      color:#999; font-size:11px; text-align:center;
+    }
+    .print-task-text{ flex:1; font-size:13px; line-height:1.55; align-self:center; color:#111; }
+    .print-empty-msg{ font-size:13px; color:#444; padding:20px 0; }
+  }
 </style>
 </head>
 <body>
@@ -563,6 +616,13 @@
       </div>
     </div>
 
+    <div class="section-label">EXPORTAR PARA PDF</div>
+    <p class="note" style="margin-top:-4px;">Gera um documento para imprimir ou salvar como PDF, com a foto de registro de cada tarefa (sem a foto de resolução) — útil para quem não tem o app à mão.</p>
+    <div class="detail-actions">
+      <button class="btn btn-ghost" id="btnExportAll">Exportar todas as tarefas</button>
+      <button class="btn btn-ghost" id="btnExportPending">Exportar apenas pendentes</button>
+    </div>
+
     <div class="section-label">TAREFAS</div>
     <div id="detailTasksContainer"></div>
 
@@ -591,6 +651,8 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div id="printSheet" class="print-only"></div>
 
 <div class="lightbox" id="lightbox" hidden>
   <button class="lightbox-close" id="lightboxClose" aria-label="Fechar">
@@ -1528,6 +1590,59 @@
     const btn = e.target.closest(".dt-delete");
     if (btn) excluirTarefa(btn.getAttribute("data-task-id"));
   });
+
+  /* ============================================================
+     EXPORTAR LISTA PARA PDF (via impressão do navegador)
+     Monta um documento só de leitura — com a foto de registro de
+     cada tarefa, nunca a de resolução — e abre o diálogo de
+     impressão, onde dá para escolher "Salvar como PDF".
+     ============================================================ */
+  async function exportarPDF(somentePendentes){
+    const list = await dbGet("lists", currentDetailListId);
+    if (!list) return;
+    const todas = await dbGetAllByIndex("tasks", "listId", currentDetailListId);
+    todas.sort((a,b) => (a.criadoEm || "").localeCompare(b.criadoEm || ""));
+    const tarefas = somentePendentes ? todas.filter(t => t.status === "pendente") : todas;
+
+    if (!tarefas.length){
+      toast(somentePendentes ? "Não há tarefas pendentes para exportar." : "Esta lista não tem tarefas.");
+      return;
+    }
+
+    toast("Preparando PDF…");
+    const imagens = await Promise.all(tarefas.map(t => resolveImageSrc(t.imagemCriacao)));
+
+    const agora = new Date();
+    const dataExport = agora.toLocaleDateString("pt-BR") + " " + agora.toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
+
+    const corpo = tarefas.map((t, i) => {
+      const foto = imagens[i]
+        ? `<img class="print-task-img" src="${imagens[i]}" alt="">`
+        : `<div class="print-task-img print-task-img-empty">Sem foto</div>`;
+      return `
+        <div class="print-task">
+          <div class="print-task-head">
+            <span class="print-task-num">Tarefa ${i + 1}</span>
+            <span class="print-task-status">${t.status === "resolvida" ? "Resolvida" : "Pendente"}</span>
+          </div>
+          ${foto}
+          <div class="print-task-text">${escapeHtml(t.texto)}</div>
+        </div>`;
+    }).join("");
+
+    document.getElementById("printSheet").innerHTML = `
+      <div class="print-header">
+        <h1>${escapeHtml(list.nome)}</h1>
+        <div class="print-meta">${somentePendentes ? "Tarefas pendentes" : "Todas as tarefas"} · ${tarefas.length} tarefa(s) · exportado em ${dataExport}</div>
+      </div>
+      <div class="print-tasks">${corpo}</div>`;
+
+    // pequena espera para as imagens (já em base64) terminarem de renderizar
+    // antes do diálogo de impressão abrir.
+    setTimeout(() => window.print(), 250);
+  }
+  document.getElementById("btnExportAll").addEventListener("click", () => exportarPDF(false));
+  document.getElementById("btnExportPending").addEventListener("click", () => exportarPDF(true));
 
   // Reenvia para a planilha uma lista marcada como "ausente" — recria a
   // linha dela e das tarefas, como se fosse uma sincronização nova.

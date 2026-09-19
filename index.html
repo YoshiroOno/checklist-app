@@ -479,10 +479,54 @@
     .print-task-text{ flex:1; font-size:13px; line-height:1.55; align-self:center; color:#111; }
     .print-empty-msg{ font-size:13px; color:#444; padding:20px 0; }
   }
+
+  /* ---- tela de login ---- */
+  #loginScreen{
+    min-height: 100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 24px;
+  }
+  .login-box{ width:100%; max-width: 340px; }
+  .login-brand{
+    text-align:center;
+    margin-bottom: 28px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .login-error{
+    color: var(--danger);
+    font-size: 13px;
+    margin: -8px 0 14px;
+  }
+
+  /* ---- restrições do perfil "loja" (sem criar, excluir ou configurar) ---- */
+  body.papel-loja #tileCreate{ display:none; }
+  body.papel-loja .menu-actions{ grid-template-columns: 1fr; }
+  body.papel-loja #btnDetailAddTask{ display:none; }
+  body.papel-loja #btnDetailDelete{ display:none; }
+  body.papel-loja #detailAusenteBanner{ display:none; }
+  body.papel-loja #detailVaziaBanner{ display:none; }
+  body.papel-loja .dt-delete{ display:none; }
 </style>
 </head>
 <body>
-<div id="app">
+
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-brand">Checklist</div>
+    <label class="field-label" for="loginUser">Usuário</label>
+    <input type="text" id="loginUser" autocomplete="username" autocapitalize="off" autocorrect="off">
+    <label class="field-label" for="loginPass">Senha</label>
+    <input type="password" id="loginPass" autocomplete="current-password">
+    <p class="login-error" id="loginError" hidden>Usuário ou senha incorretos.</p>
+    <button class="btn btn-primary" id="btnLogin">Entrar</button>
+  </div>
+</div>
+
+<div id="app" hidden>
 
   <header class="topbar">
     <div class="brand">
@@ -500,7 +544,7 @@
   <!-- ===================== TELA: MENU ===================== -->
   <main id="view-menu">
     <h1>Bom trabalho.</h1>
-    <p class="lead">Crie uma lista de tarefas com fotos, ou resolva pendências registrando a foto de confirmação. Tudo é compartilhado — visível para todos, em qualquer dispositivo.</p>
+    <p class="lead" id="menuLead">Crie uma lista de tarefas com fotos, ou resolva pendências registrando a foto de confirmação. Tudo é compartilhado — visível para todos, em qualquer dispositivo.</p>
 
     <div class="menu-actions">
       <button class="menu-tile create" id="tileCreate">
@@ -646,6 +690,10 @@
     <p class="note" id="settingsNote">Cole aqui a URL gerada ao publicar o script como "App da Web" (veja o arquivo LEIAME-configuracao.md). Os dados ficam salvos neste dispositivo mesmo sem essa URL — a sincronização com a planilha é feita quando ela estiver configurada e houver conexão.</p>
 
     <button class="btn btn-ghost" id="btnSyncNow">Sincronizar agora</button>
+
+    <div class="section-label">SESSÃO</div>
+    <p class="note" id="settingsUserNote" style="margin-top:-4px;"></p>
+    <button class="btn btn-danger" id="btnLogout">Sair</button>
   </main>
 
 </div>
@@ -679,6 +727,74 @@
      de Configurações dentro do próprio app.
      ============================================================ */
   const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwjbyyHBeTLRFV3EZ8g4NIWMGBL2Q97QyLn3XmVWbRzslg-xFP1sK5kH0ICdszVi93r/exec";
+
+  /* ============================================================
+     LOGIN — os dois únicos usuários do app
+     ============================================================
+     "admin" tem acesso a tudo. "loja" só resolve tarefas (com foto
+     de confirmação) e exporta PDF — sem criar, excluir ou mexer na
+     configuração de sincronização.
+
+     Isto roda inteiramente no navegador: não é uma trava de segurança
+     de verdade (qualquer um com o arquivo pode ver o código-fonte),
+     serve para organizar o fluxo de trabalho entre os dois perfis.
+     ============================================================ */
+  const USUARIOS = {
+    "prev18": { senha: "adm18prev", papel: "admin" },
+    "loja18": { senha: "loja18", papel: "loja" }
+  };
+  let sessaoAtual = null;
+
+  async function getSessaoSalva(){
+    const c = await dbGet("config", "sessao");
+    return c ? c.value : null;
+  }
+
+  document.getElementById("btnLogin").addEventListener("click", fazerLogin);
+  document.getElementById("loginPass").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") fazerLogin();
+  });
+
+  async function fazerLogin(){
+    const usuario = document.getElementById("loginUser").value.trim();
+    const senha = document.getElementById("loginPass").value;
+    const registro = USUARIOS[usuario];
+    const erro = document.getElementById("loginError");
+    if (!registro || registro.senha !== senha){
+      erro.hidden = false;
+      return;
+    }
+    erro.hidden = true;
+    sessaoAtual = { usuario, papel: registro.papel };
+    await dbPut("config", { key: "sessao", value: sessaoAtual });
+    document.getElementById("loginUser").value = "";
+    document.getElementById("loginPass").value = "";
+    entrarNoApp();
+  }
+
+  document.getElementById("btnLogout").addEventListener("click", async () => {
+    await dbDelete("config", "sessao");
+    sessaoAtual = null;
+    document.getElementById("app").hidden = true;
+    document.getElementById("loginScreen").hidden = false;
+    document.body.classList.remove("papel-loja");
+  });
+
+  function aplicarPermissoes(){
+    document.body.classList.toggle("papel-loja", !!sessaoAtual && sessaoAtual.papel !== "admin");
+  }
+
+  function entrarNoApp(){
+    document.getElementById("loginScreen").hidden = true;
+    document.getElementById("app").hidden = false;
+    aplicarPermissoes();
+    (async () => {
+      if (!navigator.onLine) setSyncStatus("offline");
+      else { const u = await getWebAppUrl(); setSyncStatus(u ? "pendente" : "local"); }
+    })();
+    showView("menu");
+    if (navigator.onLine) syncCycle();
+  }
 
   /* ============================================================
      BANCO DE DADOS LOCAL (IndexedDB)
@@ -1139,6 +1255,10 @@
      TELA: MENU — lista de listas existentes
      ============================================================ */
   async function renderMenu(){
+    const isAdmin = sessaoAtual && sessaoAtual.papel === "admin";
+    document.getElementById("menuLead").textContent = isAdmin
+      ? "Crie uma lista de tarefas com fotos, ou resolva pendências registrando a foto de confirmação. Tudo é compartilhado — visível para todos, em qualquer dispositivo."
+      : "Resolva pendências registrando a foto de confirmação, ou exporte uma lista em PDF.";
     const container = document.getElementById("listsContainer");
     const lists = await dbGetAll("lists");
     if (!lists.length){
@@ -1184,6 +1304,7 @@
   let pendingShot = null; // dataURL da foto selecionada, aguardando "Adicionar tarefa"
 
   function startCreate(){
+    if (!sessaoAtual || sessaoAtual.papel !== "admin"){ toast("Sem permissão para criar listas."); return; }
     stagedTasks = [];
     pendingShot = null;
     document.getElementById("listName").value = "";
@@ -1552,6 +1673,7 @@
   // Compartilhada pelo botão "Excluir lista" (rodapé) e pelo botão "Excluir"
   // do aviso de lista ausente da planilha.
   async function excluirListaAtual(){
+    if (!sessaoAtual || sessaoAtual.papel !== "admin"){ toast("Sem permissão para excluir."); return; }
     const listId = currentDetailListId;
     const list = await dbGet("lists", listId);
     if (!list) return;
@@ -1573,6 +1695,7 @@
 
   // Excluir uma tarefa específica de dentro da lista (ícone no canto da foto).
   async function excluirTarefa(taskId){
+    if (!sessaoAtual || sessaoAtual.papel !== "admin"){ toast("Sem permissão para excluir."); return; }
     const task = await dbGet("tasks", taskId);
     if (!task) return;
     const confirmado = confirm("Excluir esta tarefa? Ela some deste dispositivo e da planilha, para todo mundo.");
@@ -1691,7 +1814,13 @@
     const saveBtn = document.getElementById("btnSaveUrl");
     const note = document.getElementById("settingsNote");
     input.value = url;
-    if (WEB_APP_URL) {
+    const isAdmin = sessaoAtual && sessaoAtual.papel === "admin";
+    if (!isAdmin) {
+      // Perfil sem permissão para mexer na sincronização.
+      input.disabled = true;
+      saveBtn.hidden = true;
+      note.textContent = "Você não tem permissão para alterar a URL de sincronização.";
+    } else if (WEB_APP_URL) {
       // URL fixada no código do app — não editável por aqui.
       input.disabled = true;
       saveBtn.hidden = true;
@@ -1701,8 +1830,12 @@
       saveBtn.hidden = false;
       note.textContent = 'Cole aqui a URL gerada ao publicar o script como "App da Web" (veja o arquivo LEIAME-configuracao.md). Os dados ficam salvos neste dispositivo mesmo sem essa URL — a sincronização com a planilha é feita quando ela estiver configurada e houver conexão.';
     }
+    document.getElementById("settingsUserNote").textContent = sessaoAtual
+      ? `Conectado como ${sessaoAtual.usuario} (${isAdmin ? "administrativo" : "comum"}).`
+      : "";
   }
   document.getElementById("btnSaveUrl").addEventListener("click", async () => {
+    if (!sessaoAtual || sessaoAtual.papel !== "admin"){ toast("Sem permissão para alterar a sincronização."); return; }
     const url = document.getElementById("webAppUrl").value.trim();
     await dbPut("config", { key: "webAppUrl", value: url });
     toast(url ? "URL salva." : "URL removida.");
@@ -1726,10 +1859,14 @@
 
   (async function init(){
     await getDB();
-    if (!navigator.onLine) setSyncStatus("offline");
-    else { const u = await getWebAppUrl(); setSyncStatus(u ? "pendente" : "local"); }
-    showView("menu");
-    if (navigator.onLine) syncCycle();
+    const sessaoSalva = await getSessaoSalva();
+    if (sessaoSalva && USUARIOS[sessaoSalva.usuario]){
+      sessaoAtual = sessaoSalva;
+      entrarNoApp();
+    } else {
+      document.getElementById("loginScreen").hidden = false;
+      document.getElementById("app").hidden = true;
+    }
   })();
 
 })();

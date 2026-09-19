@@ -259,6 +259,29 @@
     color: var(--text-dim);
     margin-bottom: 14px;
   }
+  .resolve-nav{
+    display:flex;
+    gap: 7px;
+    overflow-x: auto;
+    padding: 2px 2px 10px;
+    margin-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .resolve-chip{
+    flex:none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .resolve-chip:active{ transform: scale(0.94); }
+  .resolve-chip.resolvida{ border-color: var(--success); color: var(--success); background: rgba(79,178,134,0.10); }
+  .resolve-chip.atual{ border-color: var(--accent); color: var(--accent); background: rgba(242,169,59,0.14); font-weight:700; }
   .task-card{
     background: var(--surface);
     border: 1px solid var(--border);
@@ -612,6 +635,7 @@
       </button>
       <h2 id="resolveListName">Lista</h2>
     </div>
+    <div class="resolve-nav" id="resolveNav"></div>
     <div id="resolveTaskBody"></div>
   </main>
 
@@ -1427,7 +1451,8 @@
   }
 
   /* ============================================================
-     TELA: RESOLVER TAREFA — uma a uma, pedindo foto de confirmação
+     TELA: RESOLVER TAREFA — navegação livre entre as pendentes,
+     sem precisar seguir a ordem
      ============================================================ */
   let resolveState = { listId: null, queue: [], index: 0 };
 
@@ -1442,15 +1467,45 @@
       showView("menu");
       return;
     }
-    resolveState = { listId, queue: pendentes, index: 0, totalOriginal: tasks.length };
+    resolveState = { listId, queue: pendentes, index: 0 };
     showView("resolve-task");
     renderResolveTask();
   }
 
+  // Acha a próxima tarefa ainda pendente a partir de uma posição, dando a
+  // volta no fim da fila — usado para avançar sozinho ao confirmar.
+  function proximoIndicePendente(apartirDe){
+    const n = resolveState.queue.length;
+    for (let passo = 1; passo <= n; passo++){
+      const i = (apartirDe + passo) % n;
+      if (resolveState.queue[i].status !== "resolvida") return i;
+    }
+    return -1;
+  }
+
+  function renderResolveNav(){
+    const nav = document.getElementById("resolveNav");
+    nav.innerHTML = resolveState.queue.map((t, i) => {
+      const classes = ["resolve-chip"];
+      if (i === resolveState.index) classes.push("atual");
+      if (t.status === "resolvida") classes.push("resolvida");
+      return `<button class="${classes.join(" ")}" data-index="${i}">${i + 1}</button>`;
+    }).join("");
+  }
+  document.getElementById("resolveNav").addEventListener("click", (e) => {
+    const btn = e.target.closest(".resolve-chip");
+    if (!btn) return;
+    resolveState.index = parseInt(btn.getAttribute("data-index"), 10);
+    renderResolveTask();
+  });
+
   function renderResolveTask(){
     const body = document.getElementById("resolveTaskBody");
-    const task = resolveState.queue[resolveState.index];
-    if (!task){
+    const nav = document.getElementById("resolveNav");
+    const todasResolvidas = resolveState.queue.every(t => t.status === "resolvida");
+
+    if (todasResolvidas){
+      nav.hidden = true;
       body.innerHTML = `
         <div class="done-screen">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/></svg></div>
@@ -1461,9 +1516,12 @@
       document.getElementById("btnBackToMenu").addEventListener("click", () => showView("menu"));
       return;
     }
-    const posicao = resolveState.totalOriginal - (resolveState.queue.length - resolveState.index) + 1;
+
+    nav.hidden = false;
+    renderResolveNav();
+    const task = resolveState.queue[resolveState.index];
     body.innerHTML = `
-      <div class="progress-line">TAREFA ${posicao} DE ${resolveState.totalOriginal}</div>
+      <div class="progress-line">TAREFA ${resolveState.index + 1} DE ${resolveState.queue.length} · toque em um número acima para pular direto para ela</div>
       <div class="task-card">
         <img class="ref-image" data-src="${escapeHtml(task.imagemCriacao || "")}" alt="Foto da tarefa">
         <div class="ref-body">
@@ -1511,14 +1569,17 @@
       const now = new Date().toISOString();
       task.status = "resolvida";
       task.imagemResolucao = confirmShot;
+      task.imagemResolucaoEnviada = false; // é uma foto nova — força reenvio mesmo se já tinha sido resolvida antes
       task.resolvidoEm = now;
       task.sincronizado = false;
       await dbPut("tasks", task);
       syncTask(task).then(() => renderMenu());
 
-      resolveState.index += 1;
-      if (resolveState.index >= resolveState.queue.length){
+      const proximo = proximoIndicePendente(resolveState.index);
+      if (proximo === -1){
         await finalizeList(resolveState.listId);
+      } else {
+        resolveState.index = proximo;
       }
       renderResolveTask();
     });

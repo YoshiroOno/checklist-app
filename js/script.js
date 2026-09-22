@@ -14,7 +14,7 @@
      normalmente offline e você pode configurá-la depois pela tela
      de Configurações dentro do próprio app.
      ============================================================ */
-  const WEB_APP_URL = "";
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyA5rR8ASTDuI7_S-9z5gwXYedAr4cV-nRICFIlWe_MGLMjtjr0LMxR5HfJpbUEjjmP/exec";
 
   /* ============================================================
      LOGIN — os dois únicos usuários do app

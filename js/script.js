@@ -435,7 +435,7 @@
   }
 
   // Ciclo completo: envia o que está pendente e depois busca o estado global.
-  // É isso que roda a cada 20 segundos e no botão "Sincronizar agora".
+  // É isso que roda a cada 1 minuto e no botão "Sincronizar agora" (ou tocando no indicador de status, no topo).
   async function syncCycle(){
     const url = await getWebAppUrl();
     if (!url){ setSyncStatus("local"); return; }
@@ -448,9 +448,11 @@
   }
 
   function setSyncStatus(status){
+    const pill = document.getElementById("syncPill");
     const dot = document.getElementById("syncDot");
     const label = document.getElementById("syncLabel");
     dot.className = "dot";
+    pill.classList.toggle("sincronizando", status === "sincronizando");
     if (status === "sincronizado"){ dot.classList.add("ok"); label.textContent = "sincronizado"; }
     else if (status === "sincronizando"){ label.textContent = "sincronizando…"; }
     else if (status === "pendente"){ dot.classList.add("pending"); label.textContent = "pendente"; }
@@ -861,8 +863,14 @@
     badge.textContent = list.status === "concluida" ? "concluída" : "aberta";
     badge.className = "status-badge " + list.status;
 
-    document.getElementById("detailAusenteBanner").hidden = !list.ausenteDaPlanilha;
-    document.getElementById("detailVaziaBanner").hidden = list.ausenteDaPlanilha || tasks.length > 0;
+    const listaAusente = !!list.ausenteDaPlanilha;
+    const listaVazia = !listaAusente && tasks.length === 0;
+    document.getElementById("detailAusenteBanner").hidden = !listaAusente;
+    document.getElementById("detailVaziaBanner").hidden = !listaVazia;
+
+    // Quando um dos avisos acima já mostra seu próprio botão de excluir,
+    // esconde o botão fixo do rodapé para não duplicar a opção na tela.
+    document.getElementById("btnDetailDelete").hidden = listaAusente || listaVazia;
 
     const resolveBtn = document.getElementById("btnDetailResolve");
     resolveBtn.hidden = pendentes === 0;
@@ -1143,16 +1151,23 @@
     syncCycle().then(() => { toast("Sincronização concluída."); refreshCurrentView(); });
   });
 
+  // Indicador de status no topo — visível em qualquer tela — também serve
+  // como atalho para sincronizar na hora, já que a sincronização automática
+  // passou a rodar com menos frequência.
+  document.getElementById("syncPill").addEventListener("click", () => {
+    syncCycle().then(() => refreshCurrentView());
+  });
+
   /* ============================================================
      STATUS DE CONEXÃO + SINCRONIZAÇÃO AUTOMÁTICA + INICIALIZAÇÃO
      ============================================================ */
   window.addEventListener("online", () => syncCycle());
   window.addEventListener("offline", () => setSyncStatus("offline"));
 
-  // Sincronização automática a cada 20 segundos: envia pendências e busca
+  // Sincronização automática a cada 1 minuto: envia pendências e busca
   // o estado global mais recente, para que todos os dispositivos
   // enxerguem as mesmas listas.
-  setInterval(() => { if (navigator.onLine) syncCycle(); }, 20000);
+  setInterval(() => { if (navigator.onLine) syncCycle(); }, 60000);
 
   (async function init(){
     await getDB();

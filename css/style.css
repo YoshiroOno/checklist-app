@@ -79,7 +79,13 @@
     padding: 6px 10px;
     border: 1px solid var(--border);
     border-radius: 999px;
+    background: var(--surface);
+    cursor: pointer;
   }
+  .sync-pill:active{ transform: scale(0.96); }
+  .sync-pill svg{ width:13px; height:13px; flex:none; }
+  .sync-pill.sincronizando svg{ animation: girar 0.9s linear infinite; }
+  @keyframes girar{ from{ transform: rotate(0deg); } to{ transform: rotate(360deg); } }
   .dot{ width:7px; height:7px; border-radius:50%; background: var(--text-dim); flex:none; }
   .dot.ok{ background: var(--success); }
   .dot.pending{ background: var(--accent); }

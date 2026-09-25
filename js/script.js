@@ -907,9 +907,30 @@
       hydrateImages(tasksContainer);
     }
 
-    document.getElementById("detailAddComposer").hidden = true;
-    document.getElementById("detailAddText").value = "";
-    resetDetailAddShot();
+    // Restaura um rascunho de tarefa em andamento para esta lista (se
+    // existir), em vez de sempre fechar o formulário — evita perder foto/
+    // texto já preenchidos quando a tela é redesenhada (por uma
+    // sincronização automática, por exemplo, ou se o navegador recarregar
+    // a página sozinho ao voltar da câmera).
+    const rascunho = await dbGet("config", "rascunhoTarefa");
+    const temRascunho = rascunho && rascunho.value && rascunho.value.listId === listId;
+    if (temRascunho){
+      document.getElementById("detailAddComposer").hidden = false;
+      document.getElementById("detailAddText").value = rascunho.value.texto || "";
+      if (rascunho.value.imagem){
+        detailAddShot = rascunho.value.imagem;
+        const trigger = document.getElementById("detailAddShotTrigger");
+        trigger.classList.add("has-image");
+        trigger.innerHTML = `<img src="${detailAddShot}" alt="Prévia da foto"><input class="shot-input" type="file" accept="image/*" capture="environment" id="detailAddShotInput">`;
+        document.getElementById("detailAddShotInput").addEventListener("change", onDetailAddShotChosen);
+      } else {
+        resetDetailAddShot();
+      }
+    } else {
+      document.getElementById("detailAddComposer").hidden = true;
+      document.getElementById("detailAddText").value = "";
+      resetDetailAddShot();
+    }
   }
 
   document.getElementById("btnDetailResolve").addEventListener("click", () => {
@@ -918,12 +939,29 @@
   document.getElementById("btnDetailAddTask").addEventListener("click", () => {
     document.getElementById("detailAddComposer").hidden = false;
   });
-  document.getElementById("btnDetailAddCancel").addEventListener("click", () => {
+  document.getElementById("btnDetailAddCancel").addEventListener("click", async () => {
     document.getElementById("detailAddComposer").hidden = true;
     document.getElementById("detailAddText").value = "";
     detailAddShot = null;
     resetDetailAddShot();
+    await limparRascunhoTarefa();
   });
+  document.getElementById("detailAddText").addEventListener("input", salvarRascunhoTarefa);
+
+  // Guarda o que já foi preenchido (foto e/ou texto) para esta lista, para
+  // não perder se a tela for redesenhada ou a página recarregar sozinha.
+  async function salvarRascunhoTarefa(){
+    if (!currentDetailListId) return;
+    const texto = document.getElementById("detailAddText").value;
+    if (!detailAddShot && !texto.trim()){
+      await limparRascunhoTarefa();
+      return;
+    }
+    await dbPut("config", { key: "rascunhoTarefa", value: { listId: currentDetailListId, texto, imagem: detailAddShot } });
+  }
+  async function limparRascunhoTarefa(){
+    await dbDelete("config", "rascunhoTarefa");
+  }
 
   function resetDetailAddShot(){
     detailAddShot = null;
@@ -944,6 +982,7 @@
     trigger.classList.add("has-image");
     trigger.innerHTML = `<img src="${detailAddShot}" alt="Prévia da foto"><input class="shot-input" type="file" accept="image/*" capture="environment" id="detailAddShotInput">`;
     document.getElementById("detailAddShotInput").addEventListener("change", onDetailAddShotChosen);
+    await salvarRascunhoTarefa();
   }
 
   document.getElementById("btnDetailAddSave").addEventListener("click", async () => {
@@ -970,6 +1009,7 @@
       syncList(list);
     }
 
+    await limparRascunhoTarefa();
     toast("Tarefa adicionada.");
     btn.disabled = false;
     renderListDetail();
